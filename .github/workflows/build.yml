@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   # Prepare environment and build the plugin
   build:
+    if: ${{ ! contains(github.head_ref, 'changelog-update') }}
     name: Build
     runs-on: ubuntu-latest
     outputs:
