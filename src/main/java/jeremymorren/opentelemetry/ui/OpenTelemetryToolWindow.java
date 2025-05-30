@@ -4,13 +4,10 @@ import com.intellij.codeInsight.folding.CodeFoldingManager;
 import com.intellij.execution.filters.TextConsoleBuilder;
 import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.ide.util.PropertiesComponent;
-import com.intellij.json.JsonFileType;
 import com.intellij.json.JsonLanguage;
 import com.intellij.lang.Language;
-import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
-import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
@@ -31,8 +28,7 @@ import com.intellij.unscramble.AnalyzeStacktraceUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.ui.JBUI;
 import com.jetbrains.rd.util.lifetime.Lifetime;
-import jeremymorren.opentelemetry.*;
-import jeremymorren.opentelemetry.models.*;
+import groovy.lang.Tuple2;
 import jeremymorren.opentelemetry.ui.components.*;
 import jeremymorren.opentelemetry.models.Telemetry;
 import jeremymorren.opentelemetry.models.TelemetryItem;
@@ -47,7 +43,6 @@ import jeremymorren.opentelemetry.util.DurationFormatter;
 import java.time.Instant;
 
 import jeremymorren.opentelemetry.OpenTelemetrySession;
-import jeremymorren.opentelemetry.ui.components.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -61,6 +56,7 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
+@SuppressWarnings({"SpellCheckingInspection", "NotNullFieldNotInitialized", "unused"})
 public class OpenTelemetryToolWindow {
     @NotNull
     private JPanel mainPanel;
@@ -73,7 +69,7 @@ public class OpenTelemetryToolWindow {
     @NotNull
     private JScrollPane logsScrollPane;
     @NotNull
-    private ActionToolbarImpl toolbar;
+    private JComponent toolbar;
     @NotNull
     private JComponent jsonPanel;
     private JComponent sqlPanel;
@@ -134,7 +130,6 @@ public class OpenTelemetryToolWindow {
     private final Map<TelemetryType, Integer> telemetryCountPerType = new HashMap<>();
 
     private boolean autoScrollToTheEnd;
-    private final TextConsoleBuilder builder;
 
     public OpenTelemetryToolWindow(
             @NotNull OpenTelemetrySession opentelemetrySession,
@@ -148,10 +143,9 @@ public class OpenTelemetryToolWindow {
         splitPane.setDividerLocation(0.5);
         splitPane.setResizeWeight(0.5);
         try {
-            ReadAction.nonBlocking(() -> {
-                return CodeFoldingManager.getInstance(ProjectManager.getInstance().getDefaultProject())
-                        .buildInitialFoldings(jsonPreviewDocument);
-            }).submit(AppExecutorUtil.getAppExecutorService()).get();
+            ReadAction.nonBlocking(() ->
+                    CodeFoldingManager.getInstance(ProjectManager.getInstance().getDefaultProject())
+                            .buildInitialFoldings(jsonPreviewDocument)).submit(AppExecutorUtil.getAppExecutorService()).get();
         } catch (InterruptedException | ExecutionException e) {
             throw new RuntimeException(e);
         }
@@ -194,11 +188,10 @@ public class OpenTelemetryToolWindow {
             }
         });
 
-        logsTable.getSelectionModel().addListSelectionListener(e -> {
-            selectTelemetry(telemetryTableModel.getRow(logsTable.getSelectedRow()));
-        });
+        logsTable.getSelectionModel().addListSelectionListener(e ->
+                selectTelemetry(telemetryTableModel.getRow(logsTable.getSelectedRow())));
 
-        builder = TextConsoleBuilderFactory.getInstance().createBuilder(project);
+        var builder = TextConsoleBuilderFactory.getInstance().createBuilder(project);
         builder.filters(AnalyzeStacktraceUtil.EP_NAME.getExtensions(project));
     }
 
@@ -251,32 +244,20 @@ public class OpenTelemetryToolWindow {
     }
 
     private void createUIComponents() {
-        toolbar = createToolbar();
+        var toolbar = createToolbar();
+        this.toolbar = toolbar.getComponent();
         toolbar.setTargetComponent(mainPanel);
-        toolbar.setVisible(false);
 
-        jsonPreviewDocument = new LanguageTextField.SimpleDocumentCreator().createDocument("", JsonLanguage.INSTANCE, project);
-        sqlPreviewDocument = new LanguageTextField.SimpleDocumentCreator().createDocument("", Language.findLanguageByID("SQL"), project);
-        exceptionViewDocument = new LanguageTextField.SimpleDocumentCreator().createDocument("", Language.ANY, project);
+        var json = createEditor(project, JsonLanguage.INSTANCE);
+        var sql = createEditor(project, Language.findLanguageByID("SQL"));
+        var exception = createEditor(project, Language.ANY);
 
-        jsonEditor = EditorFactory.getInstance().createViewer(jsonPreviewDocument, project, EditorKind.MAIN_EDITOR);
-        sqlEditor = EditorFactory.getInstance().createViewer(sqlPreviewDocument, project, EditorKind.MAIN_EDITOR);
-        exceptionEditor = EditorFactory.getInstance().createViewer(exceptionViewDocument, project, EditorKind.MAIN_EDITOR);
-
-        Editor[] editors = {jsonEditor, sqlEditor};
-        for (Editor editor : editors) {
-            if (editor instanceof EditorEx) {
-                ((EditorEx) editor).setHighlighter(
-                        EditorHighlighterFactory.getInstance().createEditorHighlighter(project, JsonFileType.INSTANCE));
-                ((EditorEx) editor).getFoldingModel().setFoldingEnabled(true);
-            }
-            editor.getSettings().setIndentGuidesShown(true);
-            editor.getSettings().setAdditionalLinesCount(3);
-            editor.getSettings().setFoldingOutlineShown(true);
-            editor.getSettings().setUseSoftWraps(
-                    PropertiesComponent.getInstance().getBoolean("jeremymorren.opentelemetry.useSoftWrap"));
-        }
-
+        jsonPreviewDocument = json.getV1();
+        sqlPreviewDocument = sql.getV1();
+        exceptionViewDocument = exception.getV1();
+        jsonEditor = json.getV2();
+        sqlEditor = sql.getV2();
+        exceptionEditor = exception.getV2();
         jsonPanel = jsonEditor.getComponent();
         sqlPanel = sqlEditor.getComponent();
         exceptionPanel = exceptionEditor.getComponent();
@@ -290,7 +271,27 @@ public class OpenTelemetryToolWindow {
     }
 
     @NotNull
-    private ActionToolbarImpl createToolbar() {
+    private static Tuple2<Document, Editor> createEditor(Project project, Language language) {
+        var document = new LanguageTextField.SimpleDocumentCreator().createDocument("", language, project);
+        var editor = EditorFactory.getInstance().createViewer(document, project, EditorKind.MAIN_EDITOR);
+        if (editor instanceof EditorEx) {
+            var fileType = language.getAssociatedFileType();
+            if (fileType != null)
+                ((EditorEx) editor).setHighlighter(
+                        EditorHighlighterFactory.getInstance().createEditorHighlighter(project, fileType));
+            ((EditorEx) editor).getFoldingModel().setFoldingEnabled(true);
+        }
+        editor.getSettings().setIndentGuidesShown(true);
+        editor.getSettings().setAdditionalLinesCount(3);
+        editor.getSettings().setFoldingOutlineShown(true);
+        editor.getSettings().setUseSoftWraps(
+                PropertiesComponent.getInstance().getBoolean("jeremymorren.opentelemetry.useSoftWrap"));
+
+        return new Tuple2<>(document, editor);
+    }
+
+    @NotNull
+    private ActionToolbar createToolbar() {
         final DefaultActionGroup actionGroup = new DefaultActionGroup();
 
         actionGroup.add(new OptionsToolbarAction(() -> toolbar));
@@ -319,16 +320,23 @@ public class OpenTelemetryToolWindow {
             protected Editor getEditor(@NotNull AnActionEvent e) {
                 return jsonEditor;
             }
+
+            @NotNull
+            @Override
+            public ActionUpdateThread getActionUpdateThread() {
+                return ActionUpdateThread.EDT;
+            }
         });
 
         actionGroup.add(new ClearApplicationInsightsLogToolbarAction() {
             @Override
             public void actionPerformed(@NotNull AnActionEvent anActionEvent) {
                 openTelemetrySession.clear();
+                clearTelemetryTypeCounter();
             }
         });
 
-        return new ActionToolbarImpl("OpenTelemetry", actionGroup, false);
+        return ActionManager.getInstance().createActionToolbar("OpenTelemetry", actionGroup, false);
     }
 
     private void acceptScrollToEnd(Boolean selected) {
@@ -348,7 +356,6 @@ public class OpenTelemetryToolWindow {
         count++;
         telemetryCountPerType.put(type, count);
 
-
         for (JLabel counter: telemetryTypesCounter)
         {
             TelemetryType telemetryType = (TelemetryType) counter.getClientProperty("TelemetryType");
@@ -359,22 +366,25 @@ public class OpenTelemetryToolWindow {
         }
     }
 
+    /**
+     * Clears the telemetry type counters and resets the labels to "0"
+     */
+    private void clearTelemetryTypeCounter() {
+        telemetryCountPerType.clear();
+        for (JLabel counter: telemetryTypesCounter) {
+            counter.setText("0");
+        }
+    }
+
     private void initTelemetryTypeFilters() {
-        metricCounter.putClientProperty("TelemetryType", TelemetryType.Metric);
-        exceptionCounter.putClientProperty("TelemetryType", TelemetryType.Exception);
-        messageCounter.putClientProperty("TelemetryType", TelemetryType.Message);
-        dependencyCounter.putClientProperty("TelemetryType", TelemetryType.Dependency);
-        requestCounter.putClientProperty("TelemetryType", TelemetryType.Request);
-        activityCounter.putClientProperty("TelemetryType", TelemetryType.Activity);
+        setTelemetryType(metricCounter, metricCheckBox, TelemetryType.Metric);
+        setTelemetryType(exceptionCounter, exceptionCheckBox, TelemetryType.Exception);
+        setTelemetryType(messageCounter, messageCheckBox, TelemetryType.Message);
+        setTelemetryType(dependencyCounter, dependencyCheckBox, TelemetryType.Dependency);
+        setTelemetryType(requestCounter, requestCheckBox, TelemetryType.Request);
+        setTelemetryType(activityCounter, activityCheckBox, TelemetryType.Activity);
 
         telemetryTypesCounter.addAll(Arrays.asList(metricCounter, exceptionCounter, messageCounter, dependencyCounter, requestCounter, activityCounter));
-
-        metricCheckBox.putClientProperty("TelemetryType", TelemetryType.Metric);
-        exceptionCheckBox.putClientProperty("TelemetryType", TelemetryType.Exception);
-        messageCheckBox.putClientProperty("TelemetryType", TelemetryType.Message);
-        dependencyCheckBox.putClientProperty("TelemetryType", TelemetryType.Dependency);
-        requestCheckBox.putClientProperty("TelemetryType", TelemetryType.Request);
-        activityCheckBox.putClientProperty("TelemetryType", TelemetryType.Activity);
 
         for (JCheckBox checkBox: new JCheckBox[]{metricCheckBox, exceptionCheckBox, messageCheckBox, dependencyCheckBox, requestCheckBox, activityCheckBox})
         {
@@ -384,6 +394,13 @@ public class OpenTelemetryToolWindow {
                     openTelemetrySession.setTelemetryVisible(type, e.getStateChange() == ItemEvent.SELECTED));
         }
     }
+
+    private static void setTelemetryType(JComponent counter, JComponent checkBox, TelemetryType telemetryType)
+    {
+        counter.putClientProperty("TelemetryType", telemetryType);
+        checkBox.putClientProperty("TelemetryType", telemetryType);
+    }
+
 
     private void updateJsonPreview(String json) {
         var finalJson = json.replace("\r", "");
@@ -640,6 +657,8 @@ public class OpenTelemetryToolWindow {
     private GridBagConstraints createConstraint(int y, int padX) {
         return createConstraint(0, y, padX);
     }
+
+    @SuppressWarnings("SameParameterValue")
     private GridBagConstraints createConstraint(int x, int y, int padX) {
         GridBagConstraints gridConstraints = new GridBagConstraints();
         gridConstraints.gridx = x;
