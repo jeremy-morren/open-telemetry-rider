@@ -14,7 +14,7 @@ test-logger = "4.0.0"
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 opentest4j = { group = "org.opentest4j", name = "opentest4j", version.ref = "opentest4j" }
-apacheCommonsText = "org.apache.commons:commons-text:1.13.1"
+apacheCommonsText = "org.apache.commons:commons-text:1.14.0"
 
 [plugins]
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }
