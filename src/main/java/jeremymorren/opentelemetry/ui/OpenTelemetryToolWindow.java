@@ -37,6 +37,8 @@ import jeremymorren.opentelemetry.ui.renderers.DurationRenderer;
 import jeremymorren.opentelemetry.ui.renderers.InstantRenderer;
 import jeremymorren.opentelemetry.ui.renderers.TelemetryRenderer;
 import jeremymorren.opentelemetry.ui.renderers.TelemetryTypeRenderer;
+
+import java.awt.datatransfer.StringSelection;
 import java.time.Duration;
 
 import jeremymorren.opentelemetry.util.DurationFormatter;
@@ -640,6 +642,12 @@ public class OpenTelemetryToolWindow {
         jLabel.addMouseListener(new ClickListener(e -> {
             openTelemetrySession.updateFilter(value);
             this.filter.setText(value);
+
+            // If the label was right-clicked, copy the value to the clipboard
+            if (SwingUtilities.isRightMouseButton(e)) {
+                var clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                clipboard.setContents(new StringSelection(value), null);
+            }
         }));
         return jLabel;
     }

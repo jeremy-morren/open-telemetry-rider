@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+- Fixed HTTP requests missing `?` between path and query parameters.
+- Right-clicking on a value now copies the value to the clipboard.
+
 ## [1.0.1] - 2025-05-30
 
 ### Added

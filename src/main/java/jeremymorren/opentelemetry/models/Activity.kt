@@ -138,9 +138,10 @@ data class Activity(
                 // Try to parse the URL and return the path and query
                 val uri = URI(value)
                 if (uri.query == null) {
+                    // If there is no query, just return the path
                     return uri.path
                 }
-                return uri.path + uri.query
+                return "${uri.path}?${uri.query}"
             } catch (e: Exception) {
                 return value
             }
