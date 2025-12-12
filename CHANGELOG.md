@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- Upgraded to Rider `2025.3` (build version `253.*`)
+
 ## [1.0.2] - 2025-08-04
 
 - Fixed HTTP requests missing `?` between path and query parameters.
