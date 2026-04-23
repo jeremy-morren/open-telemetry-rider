@@ -2,8 +2,8 @@ package jeremymorren.opentelemetry.ui.renderers
 
 import jeremymorren.opentelemetry.util.DurationFormatter
 import java.awt.Component
-import javax.swing.JTable
 import java.time.Duration
+import javax.swing.JTable
 
 class DurationRenderer : TelemetryRendererBase() {
     override fun getTableCellRendererComponent(

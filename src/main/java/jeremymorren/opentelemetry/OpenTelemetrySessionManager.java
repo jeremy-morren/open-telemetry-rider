@@ -26,6 +26,6 @@ public class OpenTelemetrySessionManager {
         OpenTelemetrySession opentelemetrySession = new OpenTelemetrySession(
                 (DotNetDebugProcess) debugProcess
         );
-        opentelemetrySession.startListeningToOutputDebugMessage();
+        opentelemetrySession.startListeningToOtlpReceiver();
     }
 }

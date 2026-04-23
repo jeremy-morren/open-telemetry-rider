@@ -1,8 +1,11 @@
 package jeremymorren.opentelemetry.ui;
 
 import com.intellij.codeInsight.folding.CodeFoldingManager;
-import com.intellij.execution.filters.TextConsoleBuilder;
-import com.intellij.execution.filters.TextConsoleBuilderFactory;
+import com.intellij.execution.ui.ConsoleView;
+import com.intellij.execution.ui.ConsoleViewContentType;
+import com.intellij.execution.impl.ConsoleViewImpl;
+import com.intellij.execution.filters.Filter;
+import com.intellij.execution.filters.HyperlinkInfo;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.json.JsonLanguage;
 import com.intellij.lang.Language;
@@ -10,56 +13,74 @@ import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.EditorKind;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.actions.AbstractToggleUseSoftWrapsAction;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory;
 import com.intellij.openapi.editor.impl.softwrap.SoftWrapAppliancePlaces;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.LanguageTextField;
 import com.intellij.ui.components.fields.ExtendableTextField;
 import com.intellij.ui.table.JBTable;
-import com.intellij.unscramble.AnalyzeStacktraceUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.ui.JBUI;
+import com.jetbrains.rider.stacktrace.RiderStacktraceUtil;
+import com.jetbrains.rider.unitTesting.RiderUnitTestConsoleHyperlinkFilter;
 import com.jetbrains.rd.util.lifetime.Lifetime;
 import groovy.lang.Tuple2;
-import jeremymorren.opentelemetry.ui.components.*;
+import jeremymorren.opentelemetry.OpenTelemetrySession;
 import jeremymorren.opentelemetry.models.Telemetry;
 import jeremymorren.opentelemetry.models.TelemetryItem;
 import jeremymorren.opentelemetry.models.TelemetryType;
+import jeremymorren.opentelemetry.ui.components.*;
 import jeremymorren.opentelemetry.ui.renderers.DurationRenderer;
 import jeremymorren.opentelemetry.ui.renderers.InstantRenderer;
 import jeremymorren.opentelemetry.ui.renderers.TelemetryRenderer;
 import jeremymorren.opentelemetry.ui.renderers.TelemetryTypeRenderer;
-
-import java.awt.datatransfer.StringSelection;
-import java.time.Duration;
-
 import jeremymorren.opentelemetry.util.DurationFormatter;
-import java.time.Instant;
-
-import jeremymorren.opentelemetry.OpenTelemetrySession;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.ItemEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.text.DecimalFormat;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
+import java.util.regex.Pattern;
 
-@SuppressWarnings({"SpellCheckingInspection", "NotNullFieldNotInitialized", "unused"})
+@SuppressWarnings({"NotNullFieldNotInitialized", "unused"})
 public class OpenTelemetryToolWindow {
+    private static final Logger LOG = Logger.getInstance(OpenTelemetryToolWindow.class);
+
+    /** Gets the instance of Code folding manager to use **/
+    private static CodeFoldingManager getCodeFoldingManager() {
+        var project = ProjectManager.getInstance().getDefaultProject();
+        return CodeFoldingManager.getInstance(project);
+    }
+
+    // UI Designer can call createUIComponents() before constructor assigns fields.
+    @SuppressWarnings("ConstantValue")
+    private Project getUiProjectOrDefault() {
+        return project != null ? project : ProjectManager.getInstance().getDefaultProject();
+    }
+
     @NotNull
     private JPanel mainPanel;
     @NotNull
@@ -112,7 +133,9 @@ public class OpenTelemetryToolWindow {
     @NotNull
     private Editor sqlEditor;
     @NotNull
-    private Editor exceptionEditor;
+    private ConsoleView exceptionConsole;
+    @Nullable
+    private Project exceptionConsoleProject;
 
     @NotNull
     private Document jsonPreviewDocument;
@@ -120,8 +143,6 @@ public class OpenTelemetryToolWindow {
     @NotNull
     private Document sqlPreviewDocument;
 
-    @NotNull
-    private Document exceptionViewDocument;
 
     @NotNull
     private final TelemetryTableModel telemetryTableModel;
@@ -140,17 +161,15 @@ public class OpenTelemetryToolWindow {
         this.project = project;
         this.openTelemetrySession = opentelemetrySession;
 
+        ensureExceptionConsoleUsesProject();
+
         initTelemetryTypeFilters();
 
         splitPane.setDividerLocation(0.5);
         splitPane.setResizeWeight(0.5);
-        try {
-            ReadAction.nonBlocking(() ->
-                    CodeFoldingManager.getInstance(ProjectManager.getInstance().getDefaultProject())
-                            .buildInitialFoldings(jsonPreviewDocument)).submit(AppExecutorUtil.getAppExecutorService()).get();
-        } catch (InterruptedException | ExecutionException e) {
-            throw new RuntimeException(e);
-        }
+        ReadAction.nonBlocking(() -> getCodeFoldingManager().buildInitialFoldings(jsonPreviewDocument))
+                .submit(AppExecutorUtil.getAppExecutorService())
+                .onError((Throwable ex) -> LOG.warn("Failed to build initial JSON foldings", ex));
 
         //Increase scroll speed
         formattedInfoScrollPane.getVerticalScrollBar().setUnitIncrement(12);
@@ -190,11 +209,13 @@ public class OpenTelemetryToolWindow {
             }
         });
 
-        logsTable.getSelectionModel().addListSelectionListener(e ->
-                selectTelemetry(telemetryTableModel.getRow(logsTable.getSelectedRow())));
-
-        var builder = TextConsoleBuilderFactory.getInstance().createBuilder(project);
-        builder.filters(AnalyzeStacktraceUtil.EP_NAME.getExtensions(project));
+        logsTable.getSelectionModel().addListSelectionListener(e -> {
+            // Ignore intermediate events while selection is still changing.
+            if (e.getValueIsAdjusting()) {
+                return;
+            }
+            selectTelemetry(telemetryTableModel.getRow(logsTable.getSelectedRow()));
+        });
     }
 
     private void selectTelemetry(@Nullable TelemetryItem telemetry) {
@@ -202,7 +223,7 @@ public class OpenTelemetryToolWindow {
         {
             return;
         }
-        updateJsonPreview(telemetry.getJson());
+        updateJsonPreview(telemetry.getRawJson());
         updateSqlPreview(telemetry.getTelemetry().getSql());
         updateExceptionView(telemetry.getTelemetry());
         updateFormattedDisplay(telemetry.getTelemetry());
@@ -250,19 +271,27 @@ public class OpenTelemetryToolWindow {
         this.toolbar = toolbar.getComponent();
         toolbar.setTargetComponent(mainPanel);
 
-        var json = createEditor(project, JsonLanguage.INSTANCE);
-        var sql = createEditor(project, Language.findLanguageByID("SQL"));
-        var exception = createEditor(project, Language.ANY);
+        var uiProject = getUiProjectOrDefault();
+        var json = createEditor(uiProject, JsonLanguage.INSTANCE);
+        var sql = createEditor(uiProject, Language.findLanguageByID("SQL"));
 
         jsonPreviewDocument = json.getV1();
         sqlPreviewDocument = sql.getV1();
-        exceptionViewDocument = exception.getV1();
         jsonEditor = json.getV2();
         sqlEditor = sql.getV2();
-        exceptionEditor = exception.getV2();
         jsonPanel = jsonEditor.getComponent();
         sqlPanel = sqlEditor.getComponent();
-        exceptionPanel = exceptionEditor.getComponent();
+
+        // Exception tab uses Rider's own stacktrace-aware console pipeline.
+        // This is intentionally different from a plain TextConsoleBuilder, because we need:
+        //  - stack trace frame parsing/navigation
+        //  - Rider unit-test style hyperlinks
+        //  - heavy filter support
+        exceptionConsole = createExceptionConsole(uiProject);
+        exceptionConsoleProject = uiProject;
+        configureExceptionConsoleFilters(exceptionConsole, uiProject);
+        applySoftWrapSettingToExceptionConsole();
+        exceptionPanel = exceptionConsole.getComponent();
 
         metricColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Metric", JBColor.gray));
         exceptionColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Exception", JBColor.red));
@@ -270,6 +299,46 @@ public class OpenTelemetryToolWindow {
         dependencyColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Request", JBColor.blue));
         requestColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Dependency", JBColor.green));
         activityColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Activity", JBColor.cyan));
+    }
+
+    private void ensureExceptionConsoleUsesProject() {
+        if (exceptionConsoleProject == project) {
+            return;
+        }
+
+        if (exceptionConsole != null) {
+            exceptionConsole.dispose();
+        }
+
+        // Recreate the console against the real project (not the fallback/default project)
+        // so hyperlinks and file navigation resolve correctly in the current solution.
+        exceptionConsole = createExceptionConsole(project);
+        exceptionConsoleProject = project;
+        configureExceptionConsoleFilters(exceptionConsole, project);
+        applySoftWrapSettingToExceptionConsole();
+        exceptionPanel = exceptionConsole.getComponent();
+
+        if (tabbedPane != null && tabbedPane.getTabCount() > 3) {
+            tabbedPane.setComponentAt(3, exceptionPanel);
+        }
+    }
+
+    @NotNull
+    private static ConsoleView createExceptionConsole(@NotNull Project project) {
+        // RiderStacktraceUtil wires the same console internals Rider uses for stacktrace analysis.
+        // Keeping this path avoids regressions we saw with generic console builders.
+        return RiderStacktraceUtil.INSTANCE.createRiderConsoleView(project, false);
+    }
+
+    private static void configureExceptionConsoleFilters(@NotNull ConsoleView console, @NotNull Project project) {
+        // Keep Rider unit-test hyperlinks (settings links, actions, and related output links).
+        console.addMessageFilter(new RiderUnitTestConsoleHyperlinkFilter(project));
+        // Extra file-path filter: if a physical file path is present in output, make it clickable.
+        console.addMessageFilter(new ExistingFilePathFilter(project));
+        if (console instanceof ConsoleViewImpl) {
+            // Required for stacktrace parsing/filtering over larger chunks of output.
+            ((ConsoleViewImpl) console).allowHeavyFilters();
+        }
     }
 
     @NotNull
@@ -315,6 +384,7 @@ public class OpenTelemetryToolWindow {
             public void setSelected(@NotNull AnActionEvent e, boolean state) {
                 super.setSelected(e, state);
                 PropertiesComponent.getInstance().setValue("jeremymorren.opentelemetry.useSoftWrap", state);
+                applySoftWrapSettingToExceptionConsole();
             }
 
             @NotNull
@@ -407,7 +477,7 @@ public class OpenTelemetryToolWindow {
     private void updateJsonPreview(String json) {
         var finalJson = json.replace("\r", "");
         ApplicationManager.getApplication().runWriteAction(() -> jsonPreviewDocument.setText(finalJson));
-        CodeFoldingManager.getInstance(ProjectManager.getInstance().getDefaultProject()).updateFoldRegions(jsonEditor);
+        updateFoldRegions(jsonEditor);
     }
 
     private void updateSqlPreview(@Nullable String sql) {
@@ -421,7 +491,7 @@ public class OpenTelemetryToolWindow {
         tabbedPane.setEnabledAt(2, true);
         var finalSql = sql.replace("\r", "");
         ApplicationManager.getApplication().runWriteAction(() -> sqlPreviewDocument.setText(finalSql));
-        CodeFoldingManager.getInstance(ProjectManager.getInstance().getDefaultProject()).updateFoldRegions(sqlEditor);
+        updateFoldRegions(sqlEditor);
     }
 
     private void updateExceptionView(@Nullable Telemetry telemetry) {
@@ -430,12 +500,143 @@ public class OpenTelemetryToolWindow {
             tabbedPane.setEnabledAt(3, false);
             if (tabbedPane.getSelectedIndex() == 3)
                 tabbedPane.setSelectedIndex(0);
+            exceptionConsole.clear();
             return;
         }
         tabbedPane.setEnabledAt(3, true);
-        var exception = telemetry.getException().replace("\r", "");
-        ApplicationManager.getApplication().runWriteAction(() -> exceptionViewDocument.setText(exception));
-        CodeFoldingManager.getInstance(ProjectManager.getInstance().getDefaultProject()).updateFoldRegions(exceptionEditor);
+        var exception = normalizeExceptionForConsole(telemetry.getException());
+        exceptionConsole.clear();
+        exceptionConsole.print(exception + "\n", ConsoleViewContentType.NORMAL_OUTPUT);
+        var consoleView = getExceptionConsoleView();
+        if (consoleView != null) {
+            consoleView.performWhenNoDeferredOutput(this::scrollExceptionConsoleToTop);
+        } else {
+            scrollExceptionConsoleToTop();
+        }
+    }
+
+    private void scrollExceptionConsoleToTop() {
+        var consoleView = getExceptionConsoleView();
+        if (consoleView == null) {
+            return;
+        }
+
+        ApplicationManager.getApplication().invokeLater(() -> {
+            var editor = consoleView.getEditor();
+            if (editor == null || editor.isDisposed()) {
+                return;
+            }
+
+            var scrollingModel = editor.getScrollingModel();
+            scrollingModel.disableAnimation();
+            editor.getCaretModel().moveToOffset(0);
+            scrollingModel.scrollToCaret(ScrollType.MAKE_VISIBLE);
+            scrollingModel.scrollVertically(0);
+            scrollingModel.scrollHorizontally(0);
+        });
+    }
+
+    @Nullable
+    private ConsoleViewImpl getExceptionConsoleView() {
+        if (!(exceptionConsole instanceof ConsoleViewImpl)) {
+            return null;
+        }
+
+        return (ConsoleViewImpl) exceptionConsole;
+    }
+
+    private static String normalizeExceptionForConsole(@NotNull String text) {
+        // Normalize common escaped newline forms while preserving Windows path backslashes.
+        // We intentionally avoid full Java unescape because it can consume valid path sequences
+        // like "\t" and break clickable file paths.
+        return text
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\\\", "\\")
+                .replace("\r", "");
+    }
+
+    private void applySoftWrapSettingToExceptionConsole() {
+        var consoleView = getExceptionConsoleView();
+        if (consoleView == null) {
+            return;
+        }
+
+        var editor = consoleView.getEditor();
+        if (editor == null) {
+            return;
+        }
+
+        // Toggling soft wraps in editor components tends to move console viewport to the end.
+        // Capture caret and scroll offsets so users keep their reading position.
+        var scrollingModel = editor.getScrollingModel();
+        var caretOffset = editor.getCaretModel().getOffset();
+        var verticalOffset = scrollingModel.getVerticalScrollOffset();
+        var horizontalOffset = scrollingModel.getHorizontalScrollOffset();
+
+        var useSoftWraps = PropertiesComponent.getInstance().getBoolean("jeremymorren.opentelemetry.useSoftWrap");
+        scrollingModel.disableAnimation();
+        editor.getSettings().setUseSoftWraps(useSoftWraps);
+        consoleView.performWhenNoDeferredOutput(() -> ApplicationManager.getApplication().invokeLater(() -> {
+            var currentEditor = consoleView.getEditor();
+            if (currentEditor == null || currentEditor.isDisposed()) {
+                return;
+            }
+            var currentScrollingModel = currentEditor.getScrollingModel();
+            currentScrollingModel.disableAnimation();
+            var boundedCaretOffset = Math.min(caretOffset, currentEditor.getDocument().getTextLength());
+            currentEditor.getCaretModel().moveToOffset(boundedCaretOffset);
+            currentScrollingModel.scrollToCaret(ScrollType.RELATIVE);
+            currentScrollingModel.scrollVertically(verticalOffset);
+            currentScrollingModel.scrollHorizontally(horizontalOffset);
+        }));
+    }
+
+    private static final class ExistingFilePathFilter implements Filter {
+        private static final Pattern PATH_WITH_LINE = Pattern.compile("([A-Za-z]:\\\\[^\\r\\n:]+?):(?:line\\s+)?(\\d+)");
+
+        @NotNull
+        private final Project project;
+
+        private ExistingFilePathFilter(@NotNull Project project) {
+            this.project = project;
+        }
+
+        @Nullable
+        @Override
+        public Result applyFilter(@NotNull String line, int entireLength) {
+            var matcher = PATH_WITH_LINE.matcher(line);
+            while (matcher.find()) {
+                var path = matcher.group(1);
+                var lineNumberText = matcher.group(2);
+                if (path == null || lineNumberText == null) {
+                    continue;
+                }
+
+                VirtualFile file = LocalFileSystem.getInstance().findFileByPath(path);
+                if (file == null || !file.exists()) {
+                    continue;
+                }
+
+                int lineNumber;
+                try {
+                    lineNumber = Integer.parseInt(lineNumberText);
+                } catch (NumberFormatException ignored) {
+                    continue;
+                }
+
+                int startOffset = entireLength - line.length() + matcher.start(1);
+                int endOffset = entireLength - line.length() + matcher.end(2);
+                HyperlinkInfo hyperlink = (project1) -> new OpenFileDescriptor(project, file, Math.max(0, lineNumber - 1), 0).navigate(true);
+                return new Result(startOffset, endOffset, hyperlink);
+            }
+
+            return null;
+        }
+    }
+
+    private void updateFoldRegions(@NotNull Editor editor) {
+        getCodeFoldingManager().scheduleAsyncFoldingUpdate(editor);
     }
 
     private void updateFormattedDisplay(@NotNull Telemetry telemetry) {
@@ -696,7 +897,7 @@ public class OpenTelemetryToolWindow {
      * Formats a long value to a human-readable string (with K and M suffixes)
      */
     @NotNull
-    private static String format(Integer value) {
+    public static String format(Integer value) {
         return format(value.longValue());
     }
 
@@ -704,7 +905,7 @@ public class OpenTelemetryToolWindow {
      * Formats a long value to a human-readable string (with K and M suffixes)
      */
     @NotNull
-    private static String format(Long value) {
+    public static String format(Long value) {
         if (value < 1_000) {
             return value.toString();
         }
@@ -719,7 +920,7 @@ public class OpenTelemetryToolWindow {
      * Formats a long value to a human-readable string (with K and M suffixes)
      */
     @NotNull
-    private static String format(Double value) {
+    public static String format(Double value) {
         if (value < 1_000.0) {
             return value.toString();
         }

@@ -1,21 +1,12 @@
-@file:Suppress(
-    "PROVIDED_RUNTIME_TOO_LOW",  // See https://github.com/Kotlin/kotlinx.serialization/issues/993#issuecomment-984742051
-    "unused")
-
-@file:OptIn(ExperimentalSerializationApi::class)
-
 package jeremymorren.opentelemetry.models
 
-import jeremymorren.opentelemetry.util.InstantSerializer
-import jeremymorren.opentelemetry.util.TimeSpanSerializer
-import java.time.Instant
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
+import jeremymorren.opentelemetry.models.DependencyType.HTTP
+import jeremymorren.opentelemetry.models.DependencyType.SQL
 import java.net.URI
-import java.util.*
 import java.time.Duration
+import java.time.Instant
+import java.util.*
 
-@Serializable
 data class Activity(
     val rootId: String? = null,
     val traceId: String? = null,
@@ -26,9 +17,7 @@ data class Activity(
     val source: ActivitySource? = null,
     val displayName: String? = null,
     val kind: ActivityKind? = null,
-    @Serializable(with = InstantSerializer::class)
     val startTime: Instant? = null,
-    @Serializable(with = TimeSpanSerializer::class)
     val duration: Duration? = null,
     val tags: ObjectDictionary? = null,
     val operationName: String? = null,
@@ -36,6 +25,9 @@ data class Activity(
     val statusDescription: String? = null,
     val events: List<ActivityEvent>? = null,
 ) {
+    val activityTraceFlagsDisplay: String?
+        get() = formatActivityTraceFlags(activityTraceFlags)
+
     /**
      * The type of the activity.
      */
@@ -176,7 +168,7 @@ data class Activity(
         if (parentSpanId != null)
             traceIds["Parent Span ID"] = parentSpanId
         if (activityTraceFlags != null)
-            traceIds["Flags"] = activityTraceFlags
+            traceIds["Flags"] = activityTraceFlagsDisplay ?: activityTraceFlags
         return traceIds
     }
 
@@ -258,9 +250,31 @@ data class Activity(
         }
         return str
     }
+
+    companion object {
+        @JvmStatic
+        fun formatActivityTraceFlags(raw: String?): String? {
+            if (raw == null) {
+                return null
+            }
+
+            val value = raw.toLongOrNull() ?: return raw
+            val parts = mutableListOf<String>()
+
+            if ((value and 0x01L) != 0L) {
+                parts.add("Recorded")
+            } else {
+                parts.add("NotRecorded")
+            }
+            if ((value and 0x100L) != 0L) {
+                parts.add("IsRemoteMetadata")
+            }
+
+            return parts.joinToString(" | ")
+        }
+    }
 }
 
-@Serializable
 data class ActivitySource(
     val name: String,
     val version: String? = null
@@ -272,17 +286,13 @@ data class ActivitySource(
 /**
  * An activity event.
  */
-@Serializable
 data class ActivityEvent(
     val name: String? = null,
-    @Serializable(with = InstantSerializer::class)
     val timestamp: Instant? = null,
     val tags: ObjectDictionary? = null,
 )
 
-@Serializable
 data class ActivityException(
-    @Serializable(with = InstantSerializer::class)
     val timestamp: Instant,
     val message: String,
     val stacktrace: String,
@@ -295,7 +305,6 @@ data class ActivityException(
  * Activity status code.
  * See [ActivityStatusCode Enum](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.activitystatuscode)
  */
-@Serializable
 enum class ActivityStatusCode {
     Unset,
     Ok,
@@ -306,7 +315,6 @@ enum class ActivityStatusCode {
  * Activity kind.
  * See [ActivityKind Enum](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.activitykind)
  */
-@Serializable
 enum class ActivityKind {
     Internal,
     Server,
@@ -320,8 +328,8 @@ enum class ActivityKind {
  * @property HTTP The activity is an HTTP request.
  * @property SQL The activity is a SQL query.
  */
-@Serializable
 enum class DependencyType {
     HTTP,
     SQL
 }
+

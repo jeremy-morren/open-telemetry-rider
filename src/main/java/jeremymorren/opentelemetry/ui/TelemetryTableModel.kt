@@ -3,11 +3,10 @@ package jeremymorren.opentelemetry.ui
 import jeremymorren.opentelemetry.models.Telemetry
 import jeremymorren.opentelemetry.models.TelemetryItem
 import jeremymorren.opentelemetry.models.TelemetryType
+import java.time.Duration
 import java.time.Instant
-import java.util.*
 import javax.swing.table.AbstractTableModel
 import kotlin.math.max
-import java.time.Duration
 
 class TelemetryTableModel : AbstractTableModel() {
     private val columnNames = arrayOf(

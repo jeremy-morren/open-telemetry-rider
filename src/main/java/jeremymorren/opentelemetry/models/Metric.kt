@@ -1,19 +1,12 @@
-@file:Suppress(
-    "PROVIDED_RUNTIME_TOO_LOW",  // See https://github.com/Kotlin/kotlinx.serialization/issues/993#issuecomment-984742051
-    "unused")
-
 package jeremymorren.opentelemetry.models
 
-import jeremymorren.opentelemetry.util.InstantSerializer
-import java.time.Instant
-import kotlinx.serialization.Serializable
 import java.time.Duration
+import java.time.Instant
 
 
 /**
  * A metric.
  */
-@Serializable
 data class Metric(
     val metricType: String? = null,
     val temporality: String? = null,
@@ -102,11 +95,8 @@ data class Metric(
 /**
  * A metric point.
  */
-@Serializable
 data class MetricPoint(
-    @Serializable(with = InstantSerializer::class)
     val startTime: Instant? = null,
-    @Serializable(with = InstantSerializer::class)
     val endTime: Instant? = null,
     val tags: ObjectDictionary? = null,
     val longSum: Long? = null,

@@ -16,12 +16,19 @@
         <!-- Add your extensions here -->
         <projectService serviceImplementation="jeremymorren.opentelemetry.settings.ProjectSettingsState"/>
         <applicationService serviceImplementation="jeremymorren.opentelemetry.settings.AppSettingState"/>
+        <applicationService serviceImplementation="jeremymorren.opentelemetry.otlp.OtlpHttpReceiverService"/>
         <projectConfigurable
                 parentId="tools"
                 instance="jeremymorren.opentelemetry.settings.ProjectSettingsConfigurable"
                 id="jeremymorren.opentelemetry.settings.ProjectSettingsConfigurable"
                 displayName="OpenTelemetry: Settings"
                 nonDefaultProject="true"/>
+        <applicationConfigurable
+            parentId="tools"
+            instance="jeremymorren.opentelemetry.settings.AppSettingsConfigurable"
+            id="jeremymorren.opentelemetry.settings.AppSettingsConfigurable"
+            displayName="OpenTelemetry: Global Settings"/>
+        <rider.patchCommandLine implementation="jeremymorren.opentelemetry.otlp.OtlpRiderPatchCommandLineExtension"/>
 
         <dependencySupport kind="dotnet" coordinate="OpenTelemetry" displayName="OpenTelemetry Debug Log Viewer"/>
         <dependencySupport kind="dotnet" coordinate="OpenTelemetry.Trace" displayName="OpenTelemetry Debug Log Viewer"/>

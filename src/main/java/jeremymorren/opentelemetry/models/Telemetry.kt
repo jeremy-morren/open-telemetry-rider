@@ -1,18 +1,8 @@
-@file:Suppress(
-    "PROVIDED_RUNTIME_TOO_LOW",  // See https://github.com/Kotlin/kotlinx.serialization/issues/993#issuecomment-984742051
-    "unused")
-
-@file:OptIn(ExperimentalSerializationApi::class)
-
 package jeremymorren.opentelemetry.models
 
+import jeremymorren.opentelemetry.models.TelemetryType.*
 import java.time.Instant
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlin.OptIn
-import kotlin.Suppress
 
-@Serializable
 data class Telemetry(
     val activity: Activity? = null,
     val metric: Metric? = null,
@@ -54,7 +44,6 @@ data class Telemetry(
  * @property Message The telemetry is a log message
  * @property Exception The telemetry is a log message or activity with an exception.
  */
-@Serializable
 enum class TelemetryType {
     Activity,
     Request,

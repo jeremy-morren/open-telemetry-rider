@@ -4,7 +4,8 @@
 
 ## [Unreleased]
 
-- Upgraded to Rider `2025.3` (build version `253.*`)
+- Upgraded to Rider `2026.1` (build version `261.*`)
+- Converted to HTTP server instead of Debug Console
 
 ## [1.0.2] - 2025-08-04
 

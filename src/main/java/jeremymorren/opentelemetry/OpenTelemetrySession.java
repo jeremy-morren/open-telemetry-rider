@@ -1,23 +1,24 @@
 package jeremymorren.opentelemetry;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.ui.content.Content;
 import com.jetbrains.rd.util.lifetime.Lifetime;
 import com.jetbrains.rider.debugger.DotNetDebugProcess;
-import jeremymorren.opentelemetry.models.TelemetryFactory;
 import jeremymorren.opentelemetry.models.TelemetryItem;
 import jeremymorren.opentelemetry.models.TelemetryType;
+import jeremymorren.opentelemetry.otlp.OtlpHttpReceiverService;
 import jeremymorren.opentelemetry.settings.AppSettingState;
 import jeremymorren.opentelemetry.settings.FilterTelemetryMode;
 import jeremymorren.opentelemetry.settings.ProjectSettingsState;
 import jeremymorren.opentelemetry.ui.OpenTelemetryToolWindow;
 import kotlin.Unit;
-import java.time.Duration;
 import org.eclipse.lsp4j.jsonrpc.validation.NonNull;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Stream;
@@ -31,8 +32,6 @@ public class OpenTelemetrySession {
     private final List<TelemetryItem> telemetries = new ArrayList<>();
     @NotNull
     private final List<TelemetryItem> filteredTelemetries = new ArrayList<>();
-    @NotNull
-    private final TelemetryFactory telemetryFactory = new TelemetryFactory();
     @NotNull
     private final Lifetime lifetime;
     @NotNull
@@ -76,14 +75,9 @@ public class OpenTelemetrySession {
         });
     }
 
-    public void startListeningToOutputDebugMessage() {
-        dotNetDebugProcess.getSessionProxy().getTargetDebug().advise(lifetime, outputMessageWithSubject -> {
-            TelemetryItem telemetry = telemetryFactory.tryCreateFromDebugOutputLog(outputMessageWithSubject.getOutput());
-            if (telemetry != null) {
-                addTelemetry(telemetry);
-            }
-            return Unit.INSTANCE;
-        });
+    public void startListeningToOtlpReceiver() {
+        OtlpHttpReceiverService.getInstance().ensureStarted();
+        OtlpHttpReceiverService.getInstance().addListener(this::addTelemetry);
     }
 
     public boolean isTelemetryVisible(@NotNull TelemetryType telemetryType) {
@@ -111,52 +105,63 @@ public class OpenTelemetrySession {
     }
 
     private void addTelemetry(@NotNull TelemetryItem telemetry) {
-        if (firstMessage) {
-            firstMessage = false;
-
-            openTelemetryToolWindow = new OpenTelemetryToolWindow(this, dotNetDebugProcess.getProject(), lifetime);
-
-            Content content = dotNetDebugProcess.getSession().getUI().createContent(
-                    "opentelemetry",
-                    openTelemetryToolWindow.getContent(),
-                    "Open Telemetry",
-                    ICON,
-                    null
-            );
-            dotNetDebugProcess.getSession().getUI().addContent(content);
-        }
-
-        int index = -1;
-        boolean visible = false;
+        // Compute data-model changes on the current (receiver) thread
+        final boolean isFirst;
+        final int index;
+        final boolean visible;
         synchronized (telemetries) {
+            isFirst = firstMessage;
+            if (firstMessage) {
+                firstMessage = false;
+            }
             telemetries.add(telemetry);
+            int idx = -1;
+            boolean vis = false;
             if (isTelemetryVisible(telemetry)) {
                 FilterTelemetryMode value = AppSettingState.getInstance().filterTelemetryMode.getValue();
                 switch (value) {
                     case Timestamp:
-                        index = Collections.binarySearch(filteredTelemetries, telemetry,
+                        idx = Collections.binarySearch(filteredTelemetries, telemetry,
                                 Comparator.comparing(OpenTelemetrySession::getDuration));
-                        if (index < 0)
-                            index = ~index;
-                        filteredTelemetries.add(index, telemetry);
+                        if (idx < 0)
+                            idx = ~idx;
+                        filteredTelemetries.add(idx, telemetry);
                         break;
                     case Duration:
-                        index = Collections.binarySearch(filteredTelemetries, telemetry,
+                        idx = Collections.binarySearch(filteredTelemetries, telemetry,
                                 Comparator.comparing(OpenTelemetrySession::getTimestamp));
-                        if (index < 0)
-                            index = ~index;
-                        filteredTelemetries.add(index, telemetry);
+                        if (idx < 0)
+                            idx = ~idx;
+                        filteredTelemetries.add(idx, telemetry);
                         break;
                     default:
                         filteredTelemetries.add(telemetry);
                         break;
                 }
-                visible = true;
+                vis = true;
             }
+            index = idx;
+            visible = vis;
         }
-        if (openTelemetryToolWindow != null)
-            openTelemetryToolWindow.addTelemetry(index, telemetry, visible,
-                    AppSettingState.getInstance().filterTelemetryMode.getValue() == FilterTelemetryMode.Default);
+
+        // All UI operations must happen on the EDT
+        final FilterTelemetryMode mode = AppSettingState.getInstance().filterTelemetryMode.getValue();
+        ApplicationManager.getApplication().invokeLater(() -> {
+            if (isFirst) {
+                openTelemetryToolWindow = new OpenTelemetryToolWindow(this, dotNetDebugProcess.getProject(), lifetime);
+                Content content = dotNetDebugProcess.getSession().getUI().createContent(
+                        "opentelemetry",
+                        openTelemetryToolWindow.getContent(),
+                        "Open Telemetry",
+                        ICON,
+                        null
+                );
+                dotNetDebugProcess.getSession().getUI().addContent(content);
+            }
+            if (openTelemetryToolWindow != null)
+                openTelemetryToolWindow.addTelemetry(index, telemetry, visible,
+                        mode == FilterTelemetryMode.Default);
+        });
     }
 
     private void updateFilteredTelemetries() {
@@ -170,8 +175,13 @@ public class OpenTelemetrySession {
             };
             filteredTelemetries.addAll(stream.toList());
         }
-        if (openTelemetryToolWindow != null)
-            openTelemetryToolWindow.setTelemetries(telemetries, filteredTelemetries);
+        if (openTelemetryToolWindow != null) {
+            final var tw = openTelemetryToolWindow;
+            final var snapshot = new ArrayList<>(telemetries);
+            final var filteredSnapshot = new ArrayList<>(filteredTelemetries);
+            ApplicationManager.getApplication().invokeLater(() ->
+                    tw.setTelemetries(snapshot, filteredSnapshot));
+        }
     }
 
     private boolean isTelemetryVisible(@NotNull TelemetryItem telemetry) {

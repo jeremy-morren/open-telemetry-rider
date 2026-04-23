@@ -9,6 +9,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil;
 import com.intellij.util.xmlb.annotations.OptionTag;
 import com.jetbrains.rd.util.lifetime.LifetimeDefinition;
 import com.jetbrains.rd.util.reactive.Property;
+import jeremymorren.opentelemetry.otlp.OtlpEnvironmentVariables;
 import jeremymorren.opentelemetry.settings.converters.BooleanPropertyConverter;
 import jeremymorren.opentelemetry.settings.converters.FilterTelemetryModePropertyConverter;
 import kotlin.Unit;
@@ -26,6 +27,11 @@ public class AppSettingState implements PersistentStateComponentWithModification
     public final Property<FilterTelemetryMode> filterTelemetryMode = new Property<>(FilterTelemetryMode.Default);
     @OptionTag(converter = BooleanPropertyConverter.class)
     public final Property<Boolean> caseInsensitiveSearch = new Property<>(false);
+    @OptionTag(converter = BooleanPropertyConverter.class)
+    public final Property<Boolean> enableLoopbackOtlpReceiver = new Property<>(true);
+    @OptionTag(converter = BooleanPropertyConverter.class)
+    public final Property<Boolean> injectOtlpEnvironmentVariables = new Property<>(true);
+    public String otlpEnvironmentVariables = OtlpEnvironmentVariables.DEFAULT_ENVIRONMENT_VARIABLES;
 
     public AppSettingState() {
         registerAllPropertyToIncrementTrackerOnChanges(this);
@@ -52,8 +58,10 @@ public class AppSettingState implements PersistentStateComponentWithModification
     }
 
     private void registerAllPropertyToIncrementTrackerOnChanges(@NotNull AppSettingState state) {
-        incrementTrackerWhenPropertyChanges(caseInsensitiveSearch);
-        incrementTrackerWhenPropertyChanges(filterTelemetryMode);
+        incrementTrackerWhenPropertyChanges(state.caseInsensitiveSearch);
+        incrementTrackerWhenPropertyChanges(state.filterTelemetryMode);
+        incrementTrackerWhenPropertyChanges(state.enableLoopbackOtlpReceiver);
+        incrementTrackerWhenPropertyChanges(state.injectOtlpEnvironmentVariables);
     }
 
     private <T> void incrementTrackerWhenPropertyChanges(Property<T> property) {

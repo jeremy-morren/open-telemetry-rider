@@ -4,12 +4,13 @@
 
 package jeremymorren.opentelemetry.models
 
-import java.util.*
 import java.time.Duration
 import java.time.Instant
+import java.util.*
 
 data class TelemetryItem(
     val json: String,
+    val rawJson: String,
     val telemetry: Telemetry
 )
 {

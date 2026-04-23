@@ -1,13 +1,9 @@
 package jeremymorren.opentelemetry.settings;
 
 import com.intellij.ui.components.JBCheckBox;
-import com.intellij.ui.components.JBLabel;
-import com.intellij.ui.components.JBTextArea;
 import com.intellij.util.ui.FormBuilder;
-import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
-import java.util.Arrays;
 
 public class ProjectSettingsComponent {
 

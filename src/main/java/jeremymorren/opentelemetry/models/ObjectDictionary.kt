@@ -12,8 +12,6 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
-import kotlin.collections.get
-import kotlin.collections.iterator
 
 /**
  * A map of polymorphic objects (serialized in C# as Dictionary<string, object>).

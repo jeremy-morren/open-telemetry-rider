@@ -9,11 +9,12 @@ Open Telemetry debug logs viewer for Rider
 
 View Open telemetry output instantly within JetBrains Rider.
 
-Usage: Enable open telemetry JSON debug export and start a debug session.
-Logs will automatically appear in a new tab. 
+Usage: Start a debug session with OpenTelemetry OTLP export enabled.
+The plugin starts a loopback OTLP/HTTP receiver on `127.0.0.1` and telemetry will automatically appear in a new tab.
 
-See [OpenTelemetry JSON Console Exporter](https://github.com/jeremy-morren/opentelemetry-json-console-exporter)
-to learn how to enable OpenTelemetry JSON debug export in your application.
+NB: This plugin is incompatible with the built-in Rider OpenTelemetry plugin, 
+because it overrides the necessary environment variables.
+
 <!-- Plugin description end -->
 
 ## Installation
