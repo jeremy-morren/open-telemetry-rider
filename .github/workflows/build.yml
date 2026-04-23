@@ -199,14 +199,34 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_VERSION: "v${{ needs.build.outputs.version }}"
     steps:
-
       # Check out the current repository
       - name: Fetch Sources
         uses: actions/checkout@v6
 
-      # Remove old release drafts by using the curl request for the available releases with a draft flag
+      # Check whether a published release for this version already exists
+      - name: Check Existing Published Release
+        id: release_exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -ex
+
+          TAG="${{ env.RELEASE_VERSION }}"
+
+          PUBLISHED="$(gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq 'select(.draft == false) | .id' 2>/dev/null || true)"
+          if [ -n "$PUBLISHED" ]; then
+            echo "published_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Published release for $TAG already exists. Skipping release draft steps."
+          else
+            echo "published_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Remove old release drafts
       - name: Remove Old Release Drafts
+        if: steps.release_exists.outputs.published_exists != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
@@ -215,13 +235,15 @@ jobs:
           | xargs -I '{}' gh api -X DELETE repos/{owner}/{repo}/releases/{}
 
       # Delete existing version tag if it already exists
+      # This handles case where a release was published and then deleted, leaving an orphaned tag.
       - name: Delete Existing Tag
+        if: steps.release_exists.outputs.published_exists != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -ex
 
-          TAG="v${{ needs.build.outputs.version }}"
+          TAG="${{ env.RELEASE_VERSION }}"
 
           PUBLISHED_RELEASE_NAME=""
           if RELEASE_LOOKUP="$(gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq 'if .draft == false then (.name // .tag_name // "") else empty end' 2>/dev/null)"; then
@@ -244,14 +266,15 @@ jobs:
 
       # Create a new release draft which is not publicly visible and requires manual acceptance
       - name: Create Release Draft
+        if: steps.release_exists.outputs.published_exists != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -ex
 
-          gh release create "v${{ needs.build.outputs.version }}" \
+          gh release create "${{ env.RELEASE_VERSION }}" \
             --draft \
-            --title "v${{ needs.build.outputs.version }}" \
+            --title "${{ env.RELEASE_VERSION }}" \
             --notes "$(cat << 'EOM'
           ${{ needs.build.outputs.changelog }}
           EOM
