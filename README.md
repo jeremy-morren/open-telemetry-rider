@@ -1,16 +1,18 @@
-# Open Telemetry debug logs viewer for Rider
+# Open Telemetry debug viewer for Rider
 
 ![Build](https://github.com/jeremy-morren/open-telemetry-rider/workflows/Build/badge.svg)
 [![Version](https://img.shields.io/jetbrains/plugin/v/26584.svg)](https://plugins.jetbrains.com/plugin/26584)
 [![Downloads](https://img.shields.io/jetbrains/plugin/d/26584.svg)](https://plugins.jetbrains.com/plugin/26584)
 
 <!-- Plugin description -->
-Open Telemetry debug logs viewer for Rider
+Open Telemetry debug viewer for Rider
 
-View Open telemetry output instantly within JetBrains Rider.
+View Open telemetry output instantly within JetBrains Rider. Supports Metrics, Traces, Logs.
 
 Usage: Start a debug session with OpenTelemetry OTLP export enabled.
 The plugin starts a loopback OTLP/HTTP receiver on `127.0.0.1` and telemetry will automatically appear in a new tab.
+
+Traces are parsed as Dependencies where format is known e.g. HTTP & SQL
 
 NB: This plugin is incompatible with the built-in Rider OpenTelemetry plugin, 
 because it overrides the necessary environment variables.

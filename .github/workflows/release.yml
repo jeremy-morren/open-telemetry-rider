@@ -7,6 +7,9 @@ on:
   release:
     types: [published]
 
+env:
+  JAVA_DISTRIBUTION: temurin
+
 jobs:
 
   # Prepare and publish the plugin to JetBrains Marketplace repository
@@ -35,7 +38,7 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          distribution: zulu
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
           java-version: 21
 
       # Setup Gradle
@@ -55,7 +58,9 @@ jobs:
         id: properties
         shell: bash
         run: |
-          CHANGELOG="$(cat << 'EOM' | sed -e 's/^[[:space:]]*$//g' -e '/./,$!d'
+          set -ex
+
+          CHANGELOG="$(cat << 'EOM'" | sed -e 's/^[[:space:]]*$//g' -e '/./,$!d'
           ${{ github.event.release.body }}
           EOM
           )"

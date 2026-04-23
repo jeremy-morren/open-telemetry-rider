@@ -69,9 +69,9 @@ import java.util.regex.Pattern;
 public class OpenTelemetryToolWindow {
     private static final Logger LOG = Logger.getInstance(OpenTelemetryToolWindow.class);
 
-    /** Gets the instance of Code folding manager to use **/
-    private static CodeFoldingManager getCodeFoldingManager() {
-        var project = ProjectManager.getInstance().getDefaultProject();
+    /** Gets the code folding manager for the active project. **/
+    @NotNull
+    private CodeFoldingManager getCodeFoldingManager() {
         return CodeFoldingManager.getInstance(project);
     }
 
@@ -167,7 +167,10 @@ public class OpenTelemetryToolWindow {
 
         splitPane.setDividerLocation(0.5);
         splitPane.setResizeWeight(0.5);
-        ReadAction.nonBlocking(() -> getCodeFoldingManager().buildInitialFoldings(jsonPreviewDocument))
+        ReadAction.nonBlocking(() -> {
+                getCodeFoldingManager().updateFoldRegions(jsonEditor);
+                return null;
+            })
                 .submit(AppExecutorUtil.getAppExecutorService())
                 .onError((Throwable ex) -> LOG.warn("Failed to build initial JSON foldings", ex));
 
