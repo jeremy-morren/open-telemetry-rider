@@ -258,18 +258,27 @@ jobs:
         id: release_exists
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
         run: |
-          set -ex
-
           TAG="${{ env.RELEASE_VERSION }}"
 
-          PUBLISHED="$(gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq 'select(.draft == false) | .id' 2>/dev/null || true)"
-          if [ -n "$PUBLISHED" ]; then
-            echo "published_exists=true" >> "$GITHUB_OUTPUT"
-            echo "Published release for $TAG already exists. Skipping release draft steps."
-          else
-            echo "published_exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          # Fetch a published release for the tag.
+          $releaseID = gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq 'select(.draft == false) | .id // empty'
+
+          if ($LASTEXITCODE -ne 0) {
+              echo "No release for $TAG exists"
+              echo "published_exists=false" >> $env:GITHUB_OUTPUT
+              exit 0
+          }
+
+          # Release exists. If it's  not a draft, $releaseID will be a number
+          if ([int]::TryParse($releaseID, [ref]$null)) {
+              echo "Published release for $TAG already exists"
+              echo "published_exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+              echo "Release for $TAG exists but is a draft"
+              echo "published_exists=false" >> $env:GITHUB_OUTPUT
+          }
 
       # Remove old release drafts
       - name: Remove Old Release Drafts
