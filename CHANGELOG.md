@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- Fixed bug relating to shared file across projects
+
 ## [1.0.4] - 2026-04-23
 
 - Upgraded to Rider `2026.1` (build version `261.*`)

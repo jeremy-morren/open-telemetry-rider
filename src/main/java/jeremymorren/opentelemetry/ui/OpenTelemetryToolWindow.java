@@ -69,12 +69,6 @@ import java.util.regex.Pattern;
 public class OpenTelemetryToolWindow {
     private static final Logger LOG = Logger.getInstance(OpenTelemetryToolWindow.class);
 
-    /** Gets the code folding manager for the active project. **/
-    @NotNull
-    private CodeFoldingManager getCodeFoldingManager() {
-        return CodeFoldingManager.getInstance(project);
-    }
-
     // UI Designer can call createUIComponents() before constructor assigns fields.
     @SuppressWarnings("ConstantValue")
     private Project getUiProjectOrDefault() {
@@ -168,7 +162,7 @@ public class OpenTelemetryToolWindow {
         splitPane.setDividerLocation(0.5);
         splitPane.setResizeWeight(0.5);
         ReadAction.nonBlocking(() -> {
-                getCodeFoldingManager().updateFoldRegions(jsonEditor);
+                updateFoldRegions(jsonEditor);
                 return null;
             })
                 .submit(AppExecutorUtil.getAppExecutorService())
@@ -639,7 +633,16 @@ public class OpenTelemetryToolWindow {
     }
 
     private void updateFoldRegions(@NotNull Editor editor) {
-        getCodeFoldingManager().scheduleAsyncFoldingUpdate(editor);
+        if (editor.isDisposed()) {
+            return;
+        }
+
+        var editorProject = editor.getProject();
+        if (editorProject == null || editorProject.isDisposed()) {
+            return;
+        }
+
+        CodeFoldingManager.getInstance(editorProject).scheduleAsyncFoldingUpdate(editor);
     }
 
     private void updateFormattedDisplay(@NotNull Telemetry telemetry) {
