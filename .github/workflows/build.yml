@@ -196,7 +196,7 @@ jobs:
       # Publish Plugin Verifier Result as a PR comment
       - name: Publish Plugin Verifier Result to PR
         if: ${{ always() && github.event_name == 'pull_request' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
