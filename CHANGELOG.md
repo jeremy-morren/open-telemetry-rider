@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-06-02
+
 - Fixed bug relating to shared file across projects
 - Fixed `myUI is null` bug
 - Fixed shared project telemetry state and erase not working
@@ -26,7 +28,8 @@
 - Initial release of the Open Telemetry debug logs viewer for Rider plugin.
 - Support metrics, activities and logs viewing.
 
-[Unreleased]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.4...HEAD
-[1.0.4]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.2...v1.0.4
-[1.0.2]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.1...v1.0.2
-[1.0.1]: https://github.com/jeremy-morren/open-telemetry-rider/commits/v1.0.1
+[Unreleased]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.5...HEAD
+[1.0.5]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.4...1.0.5
+[1.0.4]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.2...1.0.4
+[1.0.2]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.1...1.0.2
+[1.0.1]: https://github.com/jeremy-morren/open-telemetry-rider/commits/1.0.1
