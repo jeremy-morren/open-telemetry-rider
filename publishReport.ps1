@@ -115,7 +115,7 @@ function New-SummaryContent {
         }
 
         Write-Output ""
-        Write-Output "## Verification details"
+        Write-Output "### Verification details"
         Write-Output ""
 
         foreach ($row in $reportRows) {

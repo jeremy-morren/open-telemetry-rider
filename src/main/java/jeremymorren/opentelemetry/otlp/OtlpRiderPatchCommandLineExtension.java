@@ -30,7 +30,7 @@ public final class OtlpRiderPatchCommandLineExtension implements PatchCommandLin
             @Nullable DotNetExecutable dotNetExecutable,
             @NotNull Project project
     ) {
-        patchEnvironment(commandLine);
+        patchEnvironment(commandLine, project);
         return null;
     }
 
@@ -44,19 +44,22 @@ public final class OtlpRiderPatchCommandLineExtension implements PatchCommandLin
             @NotNull Project project,
             @Nullable DataContext dataContext
     ) {
-        patchEnvironment(workerRunInfo.getCommandLine());
+        patchEnvironment(workerRunInfo.getCommandLine(), project);
         AsyncPromise<WorkerRunInfo> promise = new AsyncPromise<>();
         promise.setResult(workerRunInfo);
         return promise;
     }
 
-    private static void patchEnvironment(@NotNull GeneralCommandLine commandLine) {
+    private static void patchEnvironment(@NotNull GeneralCommandLine commandLine, @NotNull Project project) {
         AppSettingState settings = AppSettingState.getInstance();
         if (!settings.enableLoopbackOtlpReceiver.getValue() || !settings.injectOtlpEnvironmentVariables.getValue()) {
             return;
         }
 
-        var endpoint = OtlpHttpReceiverService.getInstance().ensureStarted();
+        var endpoint = OtlpProjectScope.buildScopedEndpoint(
+                OtlpHttpReceiverService.getInstance().ensureStarted(),
+                project
+        );
         OtlpCommandLinePatcher.patchEnvironment(commandLine, settings, endpoint);
     }
 }

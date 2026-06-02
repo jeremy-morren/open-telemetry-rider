@@ -1,13 +1,15 @@
 package jeremymorren.opentelemetry;
 
+import com.intellij.execution.process.ProcessEvent;
+import com.intellij.execution.process.ProcessListener;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.IconLoader;
-import com.intellij.ui.content.Content;
 import com.jetbrains.rd.util.lifetime.Lifetime;
 import com.jetbrains.rider.debugger.DotNetDebugProcess;
 import jeremymorren.opentelemetry.models.TelemetryItem;
 import jeremymorren.opentelemetry.models.TelemetryType;
 import jeremymorren.opentelemetry.otlp.OtlpHttpReceiverService;
+import jeremymorren.opentelemetry.otlp.OtlpProjectScope;
 import jeremymorren.opentelemetry.settings.AppSettingState;
 import jeremymorren.opentelemetry.settings.FilterTelemetryMode;
 import jeremymorren.opentelemetry.settings.ProjectSettingsState;
@@ -35,6 +37,8 @@ public class OpenTelemetrySession {
     @NotNull
     private final Lifetime lifetime;
     @NotNull
+    private final String projectScopeKey;
+    @NotNull
     private String filter = "";
 
     /**
@@ -50,6 +54,8 @@ public class OpenTelemetrySession {
 
     @Nullable
     private OpenTelemetryToolWindow openTelemetryToolWindow;
+    @Nullable
+    private AutoCloseable telemetryListenerRegistration;
     private boolean firstMessage = true;
     private final ProjectSettingsState projectSettingsState;
 
@@ -58,6 +64,7 @@ public class OpenTelemetrySession {
     ) {
         this.dotNetDebugProcess = dotNetDebugProcess;
         this.lifetime = dotNetDebugProcess.getSessionLifetime();
+        this.projectScopeKey = OtlpProjectScope.getScopeKey(dotNetDebugProcess.getProject());
 
         projectSettingsState = ProjectSettingsState.getInstance(dotNetDebugProcess.getProject());
 
@@ -77,7 +84,13 @@ public class OpenTelemetrySession {
 
     public void startListeningToOtlpReceiver() {
         OtlpHttpReceiverService.getInstance().ensureStarted();
-        OtlpHttpReceiverService.getInstance().addListener(this::addTelemetry);
+        telemetryListenerRegistration = OtlpHttpReceiverService.getInstance().addListener(projectScopeKey, this::addTelemetry);
+        dotNetDebugProcess.getProcessHandler().addProcessListener(new ProcessListener() {
+            @Override
+            public void processTerminated(@NotNull ProcessEvent event) {
+                disposeTelemetryListener();
+            }
+        });
     }
 
     public boolean isTelemetryVisible(@NotNull TelemetryType telemetryType) {
@@ -100,7 +113,11 @@ public class OpenTelemetrySession {
     }
 
     public void clear() {
-        this.telemetries.clear();
+        OtlpHttpReceiverService.getInstance().clear(projectScopeKey);
+        synchronized (telemetries) {
+            this.telemetries.clear();
+            this.filteredTelemetries.clear();
+        }
         updateFilteredTelemetries();
     }
 
@@ -149,19 +166,35 @@ public class OpenTelemetrySession {
         ApplicationManager.getApplication().invokeLater(() -> {
             if (isFirst) {
                 openTelemetryToolWindow = new OpenTelemetryToolWindow(this, dotNetDebugProcess.getProject(), lifetime);
-                Content content = dotNetDebugProcess.getSession().getUI().createContent(
-                        "opentelemetry",
-                        openTelemetryToolWindow.getContent(),
-                        "Open Telemetry",
-                        ICON,
-                        null
+                dotNetDebugProcess.getSession().getUI().addContent(
+                        dotNetDebugProcess.getSession().getUI().createContent(
+                                "opentelemetry",
+                                openTelemetryToolWindow.getContent(),
+                                "Open Telemetry",
+                                ICON,
+                                null
+                        )
                 );
-                dotNetDebugProcess.getSession().getUI().addContent(content);
             }
-            if (openTelemetryToolWindow != null)
+            if (openTelemetryToolWindow != null) {
                 openTelemetryToolWindow.addTelemetry(index, telemetry, visible,
                         mode == FilterTelemetryMode.Default);
+            }
         });
+    }
+
+    private void disposeTelemetryListener() {
+        AutoCloseable registration = telemetryListenerRegistration;
+        telemetryListenerRegistration = null;
+        if (registration == null) {
+            return;
+        }
+
+        try {
+            registration.close();
+        }
+        catch (Exception ignored) {
+        }
     }
 
     private void updateFilteredTelemetries() {
@@ -182,6 +215,11 @@ public class OpenTelemetrySession {
             ApplicationManager.getApplication().invokeLater(() ->
                     tw.setTelemetries(snapshot, filteredSnapshot));
         }
+    }
+
+    @NotNull
+    public String getFilter() {
+        return filter;
     }
 
     private boolean isTelemetryVisible(@NotNull TelemetryItem telemetry) {

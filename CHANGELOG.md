@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 - Fixed bug relating to shared file across projects
+- Fixed `myUI is null` bug
+- Fixed shared project telemetry state and erase not working
 
 ## [1.0.4] - 2026-04-23
 

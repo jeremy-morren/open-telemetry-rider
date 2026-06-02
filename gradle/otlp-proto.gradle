@@ -1,0 +1,90 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+
+import java.net.URL
+
+// This gradle script downloads the OpenTelemetry proto files for the specified version and adds them to the protobuf source set for the project. 
+// This means our proto files stay in sync with the version of OpenTelemetry we depend on, and we don't have to manually manage the proto files in our repository.
+
+// Downloads the OpenTelemetry proto files from the specified version and saves them to the output directory.
+abstract class DownloadOtlpProtoTask extends DefaultTask {
+    @Input
+    abstract Property<String> getSchemaVersion()
+
+    @Input
+    abstract ListProperty<String> getProtoFiles()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @TaskAction
+    void download() {
+        def targetRoot = outputDir.get().asFile
+        def baseUrl = "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/v${schemaVersion.get()}"
+
+        targetRoot.deleteDir()
+        targetRoot.mkdirs()
+
+        protoFiles.get().each { relativePath ->
+            def targetFile = new File(targetRoot, relativePath)
+            targetFile.parentFile.mkdirs()
+            new URL("$baseUrl/$relativePath").withInputStream { input ->
+                targetFile.withOutputStream { output ->
+                    output << input
+                }
+            }
+        }
+    }
+}
+
+def libs = extensions.getByType(org.gradle.api.artifacts.VersionCatalogsExtension).named("libs")
+def otlpProtoArtifactVersion = libs.findVersion("opentelemetryProto").get().requiredVersion
+def otlpProtoSchemaVersion = otlpProtoArtifactVersion.substring(0, otlpProtoArtifactVersion.indexOf('-') >= 0 ? otlpProtoArtifactVersion.indexOf('-') : otlpProtoArtifactVersion.length())
+def otlpProtoFiles = [
+    "opentelemetry/proto/common/v1/common.proto",
+    "opentelemetry/proto/resource/v1/resource.proto",
+    "opentelemetry/proto/trace/v1/trace.proto",
+    "opentelemetry/proto/logs/v1/logs.proto",
+    "opentelemetry/proto/metrics/v1/metrics.proto",
+    "opentelemetry/proto/collector/trace/v1/trace_service.proto",
+    "opentelemetry/proto/collector/logs/v1/logs_service.proto",
+    "opentelemetry/proto/collector/metrics/v1/metrics_service.proto",
+]
+def downloadedOtlpProtoDir = layout.buildDirectory.dir("downloaded-protos/main")
+
+def downloadOtlpProto = tasks.register("downloadOtlpProto", DownloadOtlpProtoTask) {
+    schemaVersion.set(otlpProtoSchemaVersion)
+    protoFiles.set(otlpProtoFiles)
+    outputDir.set(downloadedOtlpProtoDir)
+}
+
+// Add the downloaded proto files to the main source set for protobuf
+sourceSets {
+    main {
+        proto {
+            srcDir(downloadedOtlpProtoDir)
+        }
+    }
+}
+
+tasks.named("processProtoResources") {
+    dependsOn(downloadOtlpProto)
+}
+
+// Configure the protobuf plugin to use the downloaded proto files and the correct protoc artifact
+protobuf {
+    protoc {
+        artifact = libs.findLibrary("protobufProtoc").get().get().toString()
+    }
+
+    generateProtoTasks {
+        all().configureEach {
+            dependsOn(downloadOtlpProto)
+        }
+    }
+}

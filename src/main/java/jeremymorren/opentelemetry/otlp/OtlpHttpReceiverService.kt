@@ -12,6 +12,8 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.function.Consumer
@@ -21,10 +23,10 @@ import java.util.function.Consumer
  * 
  * This is a singleton application service that:
  * - Starts a lightweight HTTP server on localhost with a random available port
- * - Listens for POST requests on /v1/traces, /v1/logs, and /v1/metrics endpoints
+ * - Listens for POST requests on /{projectKey}/v1/traces, /{projectKey}/v1/logs, and /{projectKey}/v1/metrics endpoints
  * - Decodes incoming protobuf OTLP payloads and converts them to domain models
  * - Publishes telemetry items to registered listeners (e.g., UI tool window, debug console)
- * - Maintains a deque of recent telemetry for new listeners
+ * - Maintains a bounded telemetry history per project scope for later debug sessions in that project
  * 
  * The server is created once per IDE session and reused for all debug/run configurations.
  * Uses a bounded fixed thread pool (4 threads) for handling concurrent HTTP requests from loopback.
@@ -35,13 +37,9 @@ class OtlpHttpReceiverService : Disposable {
     // Decoder: converts raw OTLP protobuf payloads into TelemetryItem domain models
     private val decoder = OtlpTelemetryDecoder()
     
-    // Thread-safe list of listeners that receive newly published telemetry items
-    private val listeners = CopyOnWriteArrayList<(TelemetryItem) -> Unit>()
+    private val listenersByScope = ConcurrentHashMap<String, CopyOnWriteArrayList<(TelemetryItem) -> Unit>>()
+    private val recentTelemetriesByScope = ConcurrentHashMap<String, ArrayDeque<TelemetryItem>>()
     
-    // Circular buffer (deque) of recent telemetry items, capped at 100_000 items per signal type
-    // Used to replay telemetry history when new listeners register
-    private val recentTelemetries = ArrayDeque<TelemetryItem>()
-
     // HTTP server instance; lazily initialized on first ensureStarted() call
     @Volatile
     private var server: HttpServer? = null
@@ -51,28 +49,41 @@ class OtlpHttpReceiverService : Disposable {
     private var endpoint: URI? = null
 
     /**
-     * Registers a listener to receive newly published telemetry items.
+    * Registers a listener to receive newly published telemetry items for a project scope.
      * 
+     * @param scopeKey project scope identifier
      * @param listener callback function invoked for each new telemetry item
      * @return AutoCloseable that unregisters the listener when closed
-     * 
-     * Note: This immediately replays all recent telemetry items to the listener
-     * so it can synchronize with the current state.
      */
-    fun addListener(listener: (TelemetryItem) -> Unit): AutoCloseable {
-        listeners.add(listener)
-        // Replay history: send all existing telemetry to the new listener
-        synchronized(recentTelemetries) {
-            recentTelemetries.forEach(listener)
+    fun addListener(scopeKey: String, listener: (TelemetryItem) -> Unit): AutoCloseable {
+        val scopeListeners = listenersByScope.computeIfAbsent(scopeKey) { CopyOnWriteArrayList() }
+        scopeListeners.add(listener)
+
+        val history = recentTelemetriesByScope.computeIfAbsent(scopeKey) { ArrayDeque() }
+        synchronized(history) {
+            history.forEach(listener)
         }
-        return AutoCloseable { listeners.remove(listener) }
+
+        return AutoCloseable {
+            scopeListeners.remove(listener)
+            if (scopeListeners.isEmpty()) {
+                listenersByScope.remove(scopeKey, scopeListeners)
+            }
+        }
     }
 
     /**
      * Convenience overload for Java callers using Consumer interface.
      */
-    fun addListener(listener: Consumer<TelemetryItem>): AutoCloseable =
-        addListener { telemetryItem -> listener.accept(telemetryItem) }
+    fun addListener(scopeKey: String, listener: Consumer<TelemetryItem>): AutoCloseable =
+        addListener(scopeKey) { telemetryItem -> listener.accept(telemetryItem) }
+
+    fun clear(scopeKey: String) {
+        val history = recentTelemetriesByScope[scopeKey] ?: return
+        synchronized(history) {
+            history.clear()
+        }
+    }
 
     /**
      * Ensures the HTTP server is started; starts it on first call, returns cached endpoint on subsequent calls.
@@ -99,10 +110,8 @@ class OtlpHttpReceiverService : Disposable {
         // Create HTTP server bound to loopback interface (127.0.0.1) on any available port
         val httpServer = HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0)
         
-        // Register endpoints for the three OTLP signal types
-        httpServer.createContext("/v1/traces") { exchange -> handle(exchange, SignalType.TRACES) }
-        httpServer.createContext("/v1/logs") { exchange -> handle(exchange, SignalType.LOGS) }
-        httpServer.createContext("/v1/metrics") { exchange -> handle(exchange, SignalType.METRICS) }
+        // Register one root context so scoped endpoints like /<scope>/v1/traces are supported.
+        httpServer.createContext("/") { exchange -> handle(exchange) }
         
         // Configure executor: Use fixed thread pool for bounded resource usage; 4 threads is sufficient for loopback receiver
         // All threads are daemon threads so they don't block IDE shutdown
@@ -132,13 +141,21 @@ class OtlpHttpReceiverService : Disposable {
      * 
      * Runs on thread pool executor threads (bounded by fixed pool size).
      */
-    private fun handle(exchange: HttpExchange, signalType: SignalType) {
+    private fun handle(exchange: HttpExchange) {
         try {
             // Validate HTTP method
             if (exchange.requestMethod != "POST") {
                 sendResponse(exchange, 405, "Method Not Allowed")
                 return
             }
+
+            val path = exchange.requestURI.path ?: ""
+            val signalType = SignalType.fromPath(path)
+            if (signalType == null) {
+                sendResponse(exchange, 404, "Not Found")
+                return
+            }
+            val scopeKey = OtlpProjectScope.tryExtractScopeKey(path) ?: DEFAULT_SCOPE
 
             // Read and decode OTLP protobuf payload
             val telemetries = exchange.requestBody.use { body ->
@@ -152,10 +169,10 @@ class OtlpHttpReceiverService : Disposable {
             }
 
             // Publish each decoded telemetry item to listeners
-            telemetries.forEach(this::publish)
+            telemetries.forEach { publish(scopeKey, it) }
             sendResponse(exchange, 200, "")
         } catch (ex: Exception) {
-            logger.warn("Failed to decode OTLP ${signalType.name.lowercase()} payload", ex)
+            logger.warn("Failed to decode OTLP payload", ex)
             sendResponse(exchange, 400, ex.message ?: "Invalid OTLP payload")
         }
     }
@@ -164,24 +181,21 @@ class OtlpHttpReceiverService : Disposable {
      * Publishes a single telemetry item to all registered listeners.
      * 
      * Process:
-     * 1. Adds item to recent telemetry deque (circular buffer, max 100_000 items)
-     * 2. Notifies all listeners (typically: UI tool window, debug console, etc.)
+     * 1. Notifies all listeners (typically: UI tool window, debug console, etc.)
      * 
-     * Thread-safe: recentTelemetries access is synchronized; listeners is thread-safe (CopyOnWriteArrayList).
+     * Thread-safe: listeners is thread-safe (CopyOnWriteArrayList).
      * Listener exceptions are caught and logged but don't block other listeners.
      */
-    private fun publish(telemetryItem: TelemetryItem) {
-        // Add to history buffer for new listeners
-        synchronized(recentTelemetries) {
-            recentTelemetries.addLast(telemetryItem)
-            // Maintain circular buffer: remove oldest when exceeding 100_000 items
-            while (recentTelemetries.size > 100_000) {
-                recentTelemetries.removeFirst()
+    private fun publish(scopeKey: String, telemetryItem: TelemetryItem) {
+        val history = recentTelemetriesByScope.computeIfAbsent(scopeKey) { ArrayDeque() }
+        synchronized(history) {
+            history.addLast(telemetryItem)
+            while (history.size > 100_000) {
+                history.removeFirst()
             }
         }
 
-        // Notify all listeners in parallel (using CopyOnWriteArrayList for thread safety)
-        listeners.forEach { listener ->
+        listenersByScope[scopeKey]?.forEach { listener ->
             try {
                 listener(telemetryItem)
             } catch (ex: Exception) {
@@ -229,11 +243,8 @@ class OtlpHttpReceiverService : Disposable {
         server?.stop(0)
         server = null
         endpoint = null
-        listeners.clear()
-        // Clear recent telemetry history
-        synchronized(recentTelemetries) {
-            recentTelemetries.clear()
-        }
+        listenersByScope.clear()
+        recentTelemetriesByScope.clear()
     }
 
     /**
@@ -243,12 +254,25 @@ class OtlpHttpReceiverService : Disposable {
         TRACES,   // Distributed traces (spans)
         LOGS,     // Log records
         METRICS,  // Metrics (gauges, counters, histograms, etc.)
+
+        ;
+
+        companion object {
+            fun fromPath(path: String): SignalType? = when {
+                path.endsWith("/v1/traces") -> TRACES
+                path.endsWith("/v1/logs") -> LOGS
+                path.endsWith("/v1/metrics") -> METRICS
+                else -> null
+            }
+        }
     }
 
     /**
      * Companion object providing static access to the singleton instance.
      */
     companion object {
+        private const val DEFAULT_SCOPE = "default"
+
         @JvmStatic
         fun getInstance(): OtlpHttpReceiverService =
             ApplicationManager.getApplication().getService(OtlpHttpReceiverService::class.java)

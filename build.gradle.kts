@@ -3,17 +3,7 @@ import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 
-plugins {
-    id("java") // Java support
-    alias(libs.plugins.kotlin) // Kotlin support
-    alias(libs.plugins.intelliJPlatform) // IntelliJ Platform Gradle Plugin
-    alias(libs.plugins.changelog) // Gradle Changelog Plugin
-    alias(libs.plugins.qodana) // Gradle Qodana Plugin
-    alias(libs.plugins.kover) // Gradle Kover Plugin
-    alias(libs.plugins.kotlinSerialization) // Kotlin Serialization Plugin
-    alias(libs.plugins.testLogger) // Gradle Test Logger Plugin
-}
-
+// Get the plugin properties from the gradle.properties file
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
@@ -27,6 +17,21 @@ val verifyPlatformVersions = providers.gradleProperty("verifyPlatformVersions")
             .filter { it.isNotEmpty() }
     }
 val useInstallerForPlatform = platformType.get() != "RD"
+
+plugins {
+    id("java") // Java support
+    alias(libs.plugins.kotlin) // Kotlin support
+    alias(libs.plugins.protobuf) // Protobuf support
+    alias(libs.plugins.intelliJPlatform) // IntelliJ Platform Gradle Plugin
+    alias(libs.plugins.changelog) // Gradle Changelog Plugin
+    alias(libs.plugins.qodana) // Gradle Qodana Plugin
+    alias(libs.plugins.kover) // Gradle Kover Plugin
+    alias(libs.plugins.kotlinSerialization) // Kotlin Serialization Plugin
+    alias(libs.plugins.testLogger) // Gradle Test Logger Plugin
+}
+
+// Import the oltp-proto tasks
+apply(from = "gradle/otlp-proto.gradle")
 
 // Set the JVM language level used to build the project.
 kotlin {
@@ -50,7 +55,7 @@ dependencies {
     implementation(libs.apacheCommonsText)
     implementation(libs.jacksonDatabind)
     implementation(libs.jacksonDatatypeJsr310)
-    implementation(libs.opentelemetryProto)
+    implementation(libs.protobufJava)
     implementation(libs.protobufJavaUtil)
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
@@ -60,8 +65,12 @@ dependencies {
             version = platformVersion,
         ) { useInstaller = useInstallerForPlatform }
 
-        // Plugin Dependencies. Uses `platformBundledPlugins` property from the gradle.properties file for bundled IntelliJ Platform plugins.
-        bundledPlugins(providers.gradleProperty("platformBundledPlugins").map { it.split(',') })
+        // Module dependencies like com.intellij.modules.json belong on the bundled module classpath.
+        bundledModules(providers.gradleProperty("platformBundledPlugins").map { raw ->
+            raw.split(',')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+        })
 
         // Plugin Dependencies. Uses `platformPlugins` property from the gradle.properties file for plugin from JetBrains Marketplace.
         plugins(providers.gradleProperty("platformPlugins").map { it.split(',') })

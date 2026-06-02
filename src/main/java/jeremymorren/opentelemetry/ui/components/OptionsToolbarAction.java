@@ -3,18 +3,23 @@ package jeremymorren.opentelemetry.ui.components;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.*;
 import jeremymorren.opentelemetry.OpenTelemetryBundle;
+import jeremymorren.opentelemetry.OpenTelemetrySession;
 import jeremymorren.opentelemetry.settings.FilterTelemetryMode;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 import java.util.function.Supplier;
 
 public class OptionsToolbarAction extends AnAction {
     private final Supplier<Component> toolbarComponent;
+    @Nullable
+    private final OpenTelemetrySession openTelemetrySession;
 
-    public OptionsToolbarAction(Supplier<Component> toolbarComponent) {
+    public OptionsToolbarAction(Supplier<Component> toolbarComponent, @Nullable OpenTelemetrySession openTelemetrySession) {
         super();
         this.toolbarComponent = toolbarComponent;
+        this.openTelemetrySession = openTelemetrySession;
 
         String message = OpenTelemetryBundle.message("ShowOptionsMenu");
         this.getTemplatePresentation().setDescription(message);
@@ -25,7 +30,6 @@ public class OptionsToolbarAction extends AnAction {
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         DefaultActionGroup actionGroup = new DefaultActionGroup();
-        actionGroup.add(new Separator());
         actionGroup.add(new ChangeFilterModeToolbarAction(FilterTelemetryMode.Default));
         actionGroup.add(new ChangeFilterModeToolbarAction(FilterTelemetryMode.Duration));
         actionGroup.add(new ChangeFilterModeToolbarAction(FilterTelemetryMode.Timestamp));

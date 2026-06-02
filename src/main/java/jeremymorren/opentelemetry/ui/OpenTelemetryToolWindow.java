@@ -19,10 +19,8 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.EditorKind;
 import com.intellij.openapi.editor.ScrollType;
-import com.intellij.openapi.editor.actions.AbstractToggleUseSoftWrapsAction;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory;
-import com.intellij.openapi.editor.impl.softwrap.SoftWrapAppliancePlaces;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
@@ -235,7 +233,21 @@ public class OpenTelemetryToolWindow {
             @NotNull List<TelemetryItem> telemetries,
             @NotNull List<TelemetryItem> visibleTelemetries
     ) {
+        syncControlsFromSession();
+        rebuildTelemetryTypeCounter(telemetries);
         telemetryTableModel.setRows(visibleTelemetries);
+    }
+
+    public void dispose() {
+        if (jsonEditor != null && !jsonEditor.isDisposed()) {
+            EditorFactory.getInstance().releaseEditor(jsonEditor);
+        }
+        if (sqlEditor != null && !sqlEditor.isDisposed()) {
+            EditorFactory.getInstance().releaseEditor(sqlEditor);
+        }
+        if (exceptionConsole != null) {
+            exceptionConsole.dispose();
+        }
     }
 
     public void addTelemetry(
@@ -362,7 +374,7 @@ public class OpenTelemetryToolWindow {
     private ActionToolbar createToolbar() {
         final DefaultActionGroup actionGroup = new DefaultActionGroup();
 
-        actionGroup.add(new OptionsToolbarAction(() -> toolbar));
+        actionGroup.add(new OptionsToolbarAction(() -> toolbar, openTelemetrySession));
         actionGroup.addSeparator();
 
         autoScrollToTheEnd = PropertiesComponent.getInstance()
@@ -372,30 +384,7 @@ public class OpenTelemetryToolWindow {
 
         actionGroup.add(new ToggleCaseInsensitiveSearchToolbarAction());
 
-        actionGroup.add(new AbstractToggleUseSoftWrapsAction(SoftWrapAppliancePlaces.PREVIEW, false) {
-            {
-                ActionUtil.copyFrom(this, "EditorToggleUseSoftWraps");
-            }
-
-            @Override
-            public void setSelected(@NotNull AnActionEvent e, boolean state) {
-                super.setSelected(e, state);
-                PropertiesComponent.getInstance().setValue("jeremymorren.opentelemetry.useSoftWrap", state);
-                applySoftWrapSettingToExceptionConsole();
-            }
-
-            @NotNull
-            @Override
-            protected Editor getEditor(@NotNull AnActionEvent e) {
-                return jsonEditor;
-            }
-
-            @NotNull
-            @Override
-            public ActionUpdateThread getActionUpdateThread() {
-                return ActionUpdateThread.EDT;
-            }
-        });
+        actionGroup.add(new ToggleUseSoftWrapsToolbarAction(this::getPrimaryEditor, this::applySoftWrapSettingToExceptionConsole));
 
         actionGroup.add(new ClearApplicationInsightsLogToolbarAction() {
             @Override
@@ -406,6 +395,11 @@ public class OpenTelemetryToolWindow {
         });
 
         return ActionManager.getInstance().createActionToolbar("OpenTelemetry", actionGroup, false);
+    }
+
+    @NotNull
+    private Editor getPrimaryEditor() {
+        return jsonEditor;
     }
 
     private void acceptScrollToEnd(Boolean selected) {
@@ -445,6 +439,13 @@ public class OpenTelemetryToolWindow {
         }
     }
 
+    private void rebuildTelemetryTypeCounter(@NotNull List<TelemetryItem> telemetries) {
+        clearTelemetryTypeCounter();
+        for (TelemetryItem telemetry : telemetries) {
+            updateTelemetryTypeCounter(telemetry);
+        }
+    }
+
     private void initTelemetryTypeFilters() {
         setTelemetryType(metricCounter, metricCheckBox, TelemetryType.Metric);
         setTelemetryType(exceptionCounter, exceptionCheckBox, TelemetryType.Exception);
@@ -461,6 +462,24 @@ public class OpenTelemetryToolWindow {
             checkBox.setSelected(openTelemetrySession.isTelemetryVisible(type));
             checkBox.addItemListener(e ->
                     openTelemetrySession.setTelemetryVisible(type, e.getStateChange() == ItemEvent.SELECTED));
+        }
+    }
+
+    private void syncControlsFromSession() {
+        if (!Objects.equals(filter.getText(), openTelemetrySession.getFilter())) {
+            filter.setText(openTelemetrySession.getFilter());
+        }
+
+        for (JCheckBox checkBox: new JCheckBox[]{metricCheckBox, exceptionCheckBox, messageCheckBox, dependencyCheckBox, requestCheckBox, activityCheckBox}) {
+            var type = (TelemetryType) checkBox.getClientProperty("TelemetryType");
+            if (type == null) {
+                continue;
+            }
+
+            var selected = openTelemetrySession.isTelemetryVisible(type);
+            if (checkBox.isSelected() != selected) {
+                checkBox.setSelected(selected);
+            }
         }
     }
 
