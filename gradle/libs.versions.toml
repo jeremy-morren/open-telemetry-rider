@@ -13,7 +13,7 @@ changelog = "2.5.0"
 intelliJPlatform = "2.15.0"
 kotlin = "2.4.0"
 kover = "0.9.8"
-qodana = "2025.3.2"
+qodana = "2026.1.0"
 test-logger = "4.0.0"
 
 [libraries]
