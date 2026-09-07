@@ -45,6 +45,8 @@ import jeremymorren.opentelemetry.OpenTelemetryBundle;
 import jeremymorren.opentelemetry.OpenTelemetrySession;
 import jeremymorren.opentelemetry.settings.AppSettingState;
 import jeremymorren.opentelemetry.http.HttpTelemetryRequest;
+import jeremymorren.opentelemetry.models.Activity;
+import jeremymorren.opentelemetry.models.LogMessage;
 import jeremymorren.opentelemetry.models.Telemetry;
 import jeremymorren.opentelemetry.models.TelemetryItem;
 import jeremymorren.opentelemetry.models.TelemetryType;
@@ -75,6 +77,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"NotNullFieldNotInitialized", "unused"})
 public class OpenTelemetryToolWindow {
     private static final Logger LOG = Logger.getInstance(OpenTelemetryToolWindow.class);
+    private static final String RESPONSE_HEADER_PREFIX = "http.response.header.";
 
     // UI Designer can call createUIComponents() before constructor assigns fields.
     @SuppressWarnings("ConstantValue")
@@ -157,6 +160,9 @@ public class OpenTelemetryToolWindow {
     private final Map<TelemetryType, Integer> telemetryCountPerType = new HashMap<>();
 
     private boolean autoScrollToTheEnd;
+
+    /** Builds the Formatted tab; created on first use, since the form supplies its container. */
+    private TelemetryDetailsPanel details;
 
     public OpenTelemetryToolWindow(
             @NotNull OpenTelemetrySession opentelemetrySession,
@@ -793,264 +799,278 @@ public class OpenTelemetryToolWindow {
     }
 
     private void updateFormattedDisplay(@NotNull Telemetry telemetry) {
-        // Show information about the telemetry
-        formattedInfo.removeAll();
+        if (details == null) {
+            details = new TelemetryDetailsPanel(formattedInfo, value -> filter.setText(value));
+        }
 
-        int indent = 30; //Indentation for subfields
-
-        int row = 1;
-
+        details.begin();
         if (telemetry.getActivity() != null) {
-            var activity = telemetry.getActivity();
-
-            //Show activity information
-            formattedInfo.add(createTitleLabel(activity.getTypeDisplay()), createConstraint(row++, 0));
-            if (activity.getSource() != null && activity.getType() == TelemetryType.Activity) {
-                formattedInfo.add(createFilterLabel("Source", activity.getSource().getName()), createConstraint(row++, indent));
-            }
-            if (activity.getDuration() != null) {
-                var duration = DurationFormatter.Companion.format(activity.getDuration());
-                formattedInfo.add(new JLabel("Duration: " + duration), createConstraint(row++, indent));
-            }
-            if (activity.getDisplayName() != null) {
-                formattedInfo.add(createFilterLabel("Display name", activity.getDisplayName()), createConstraint(row++, indent));
-            }
-            if (activity.getOperationName() != null) {
-                formattedInfo.add(createFilterLabel("Operation", activity.getOperationName()), createConstraint(row++, indent));
-            }
-            if (activity.getErrorDisplay() != null) {
-                formattedInfo.add(createFilterLabel("Error", activity.getErrorDisplay()), createConstraint(row++, indent));
-            }
-            if (activity.getDbQueryTime() != null) {
-                var label = new JLabel("DB Time: " + DurationFormatter.Companion.format(activity.getDbQueryTime()));
-                label.setToolTipText("Time spent before first response received");
-                formattedInfo.add(label, createConstraint(row++, indent));
-            }
-            if (activity.getDbReadTime() != null) {
-                var label = new JLabel("Read Time: " + DurationFormatter.Companion.format(activity.getDbReadTime()));
-                label.setToolTipText("Time spent reading data from the database");
-                formattedInfo.add(label, createConstraint(row++, indent));
-            }
-
-            if (activity.getRequestPath() != null) {
-                formattedInfo.add(createFilterLabel("Path", activity.getRequestPath()), createConstraint(row++, indent));
-            }
-            if (activity.getTags() != null) {
-                formattedInfo.add(createTitleLabel("Tags"), createConstraint(row++, 0));
-                for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
-                    var label = createFilterLabel(entry.getKey(), entry.getValue());
-                    formattedInfo.add(label, createConstraint(row++, indent));
-                }
-            }
+            describeActivity(telemetry.getActivity());
         }
         if (telemetry.getMetric() != null) {
-            var metric = telemetry.getMetric();
-            if (metric.getName() != null) {
-                formattedInfo.add(createTitleLabel(metric.getName() + " (" + metric.getTemporality() + ")"), createConstraint(row++, 0));
-                formattedInfo.add(createFilterLabel("Name", metric.getName()), createConstraint(row++, indent));
-            }
-            if (metric.getDescription() != null) {
-                formattedInfo.add(createFilterLabel("Description", metric.getDescription()), createConstraint(row++, indent));
-            }
-            if (metric.getTemporality() != null) {
-                formattedInfo.add(createFilterLabel("Temporality", metric.getTemporality()), createConstraint(row++, indent));
-            }
-            if (metric.getMeterName() != null) {
-                formattedInfo.add(createFilterLabel("Meter", metric.getMeterName()), createConstraint(row++, indent));
-            }
-            if (metric.getUnit() != null) {
-                formattedInfo.add(createFilterLabel("Unit", metric.getUnit()), createConstraint(row++, indent));
-            }
-            if (metric.getDuration() != null) {
-                var duration = DurationFormatter.Companion.format(metric.getDuration());
-                formattedInfo.add(new JLabel("Duration: " + duration), createConstraint(row++, indent));
-            }
-            if (metric.getTaggedPoints() != null) {
-                var taggedPoints = metric.getTaggedPoints();
-                formattedInfo.add(createTitleLabel("Points"), createConstraint(row++, 0));
-                for (var i = 0; i < taggedPoints.size(); i++) {
-                    var point = taggedPoints.get(i);
-                    if (point.getLongSum() != null) {
-                        var sum = format(point.getLongSum());
-                        formattedInfo.add(new JLabel("Sum: " + sum), createConstraint(row++, indent));
-                    }
-                    if (point.getDoubleSum() != null) {
-                        var sum = format(point.getDoubleSum());
-                        formattedInfo.add(new JLabel("Sum: " + sum), createConstraint(row++, indent));
-                    }
-                    if (point.getLongGauge() != null) {
-                        var gauge = format(point.getLongGauge());
-                        formattedInfo.add(new JLabel("Gauge: " + gauge), createConstraint(row++, indent));
-                    }
-                    if (point.getDoubleGauge() != null) {
-                        var gauge = format(point.getDoubleGauge());
-                        formattedInfo.add(new JLabel("Gauge: " + gauge), createConstraint(row++, indent));
-                    }
-                    if (point.getHistogramCount() != null) {
-                        var count = format(point.getHistogramCount());
-                        formattedInfo.add(new JLabel("Histogram Count: " + count), createConstraint(row++, indent));
-                    }
-                    if (point.getHistogramSum() != null) {
-                        var sum = format(point.getHistogramSum());
-                        formattedInfo.add(new JLabel("Histogram Sum: " + sum), createConstraint(row++, indent));
-                    }
-                    if (point.getTags() != null) {
-                        for (Map.Entry<String, String> entry : point.getTags().getDisplayValues().entrySet()) {
-                            var label = createFilterLabel(entry.getKey(), entry.getValue());
-                            formattedInfo.add(label, createConstraint(row++, indent));
-                        }
-                    }
-                    if (i < taggedPoints.size() - 1) {
-                        //Add blank line between points
-                        formattedInfo.add(new JPanel(), createConstraint(row++, 0));
-                    }
-                }
-            }
+            describeMetric(telemetry.getMetric());
         }
         if (telemetry.getLog() != null) {
-            var log = telemetry.getLog();
-            formattedInfo.add(createTitleLabel(log.getType().toString()), createConstraint(row++, 0));
-            if (log.getCustomEventName() != null)
-            {
-                formattedInfo.add(createFilterLabel("Event", log.getCustomEventName()), createConstraint(row++, indent));
-            }
-            if (log.getFormattedMessage() != null)
-            {
-                formattedInfo.add(createFilterLabel("Message", log.getFormattedMessage()), createConstraint(row++, indent));
-            }
-            if (log.getLogLevel() != null)
-            {
-                formattedInfo.add(createFilterLabel("Level", log.getLogLevel().toString()), createConstraint(row++, indent));
-            }
-            if (log.getCategoryName() != null)
-            {
-                formattedInfo.add(createFilterLabel("Category", log.getCategoryName()), createConstraint(row++, indent));
-            }
-            if (log.getEventId() != null)
-            {
-                formattedInfo.add(createFilterLabel("EventId.Id", Integer.toString(log.getEventId().getId())), createConstraint(row++, indent));
-                if (log.getEventId().getName() != null)
-                {
-                    formattedInfo.add(createFilterLabel("EventId.Name", log.getEventId().getName()), createConstraint(row++, indent));
-                }
-            }
-            if (log.getException() != null) {
-                if (log.getException().getType() != null)
-                {
-                    formattedInfo.add(createFilterLabel("Exception Type", log.getException().getType()), createConstraint(row++, indent));
-                }
-                if (log.getException().getMessage() != null)
-                {
-                    formattedInfo.add(createFilterLabel("Exception Message", log.getException().getMessage()), createConstraint(row++, indent));
-                }
-            }
-            if (log.getAttributes() != null)
-            {
-                formattedInfo.add(createTitleLabel("Attributes"), createConstraint(row++, 0));
-                for (Map.Entry<String, String> entry : log.getAttributes().getDisplayValues().entrySet()) {
-                    var value = entry.getValue();
-                    if (value == null) {
-                        value = "";
-                    }
-                    var label = createFilterLabel(entry.getKey(), value);
-                    formattedInfo.add(label, createConstraint(row++, indent));
-                }
-            }
+            describeLog(telemetry.getLog());
         }
-
-        //Add trace information
         if (telemetry.getTraceIds() != null) {
-            formattedInfo.add(createTitleLabel("Trace"), createConstraint(row++, 0));
+            details.section("Trace");
             for (Map.Entry<String, String> entry : telemetry.getTraceIds().entrySet()) {
-                var label = createFilterLabel(entry.getKey(), entry.getValue());
-                formattedInfo.add(label, createConstraint(row++, indent));
+                details.row(entry.getKey(), entry.getValue());
             }
         }
+        details.end();
+    }
 
-        // Padding
-        {
-            GridBagConstraints c = createConstraint(10_000, 0);
-            c.weighty = 1;
-            formattedInfo.add(new JPanel(), c);
+    private void describeActivity(@NotNull Activity activity) {
+        String status = activity.getResponseStatusCode();
+        String duration = activity.getDuration() == null
+                ? null
+                : DurationFormatter.Companion.format(activity.getDuration());
+        details.header(
+                activityTitle(activity),
+                join(status, duration),
+                activity.isError() ? JBColor.namedColor("OpenTelemetry.SeverityLevel.Error", JBColor.red) : null);
+
+        details.section("Overview");
+        details.row("Type", activity.getTypeDisplay());
+        if (activity.getSource() != null) {
+            details.row("Source", activity.getSource().getName());
         }
+        details.row("Display name", activity.getDisplayName());
+        details.row("Operation", activity.getOperationName());
+        details.row("Status description", activity.getStatusDescription());
+        details.row("Error", activity.getErrorDisplay());
 
-        formattedInfo.revalidate();
-        formattedInfo.repaint();
+        describeHttp(activity);
+        describeDatabase(activity);
+        describeTiming(activity);
+
+        if (activity.getTags() != null) {
+            details.section("Tags");
+            for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
+                details.row(entry.getKey(), entry.getValue());
+            }
+        }
     }
 
     @NotNull
-    private JLabel createFilterLabel(@Nullable String label, @Nullable String value) {
-        if (label == null) {
-            label = "";
+    private static String activityTitle(@NotNull Activity activity) {
+        HttpTelemetryRequest request = HttpTelemetryRequest.from(activity);
+        if (request != null) {
+            return request.getMethod() + " " + request.getUrl();
         }
-        if (value == null) {
-            value = "";
+        if (activity.getDbQuery() != null) {
+            String database = activity.getDbName();
+            return database == null ? "Database query" : "Database query - " + database;
         }
-        return createFilterLabelFinal(label, value);
+        return activity.getDisplayName() != null ? activity.getDisplayName() : activity.getTypeDisplay();
     }
 
-    @NotNull
-    private JLabel createFilterLabelFinal(@NotNull String label, @NotNull String value) {
-        var display = value.replace("\r", "").replace("\n", " ");
-        if (display.length() > 100) {
-            display = display.substring(0, 100) + "...";
+    private void describeHttp(@NotNull Activity activity) {
+        HttpTelemetryRequest request = HttpTelemetryRequest.from(activity);
+        if (request == null) {
+            return;
         }
-        JLabel jLabel = new JLabel("<html>" + escapeHtml(label) + ": " + "<a href=''>" + escapeHtml(display) + "</a></html>");
-        jLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        String clicked = value;
-        jLabel.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                // Setting the text applies the filter through the document listener.
-                filter.setText(clicked);
 
-                // If the label was right-clicked, copy the value to the clipboard
-                if (SwingUtilities.isRightMouseButton(e)) {
-                    CopyPasteManager.getInstance().setContents(new StringSelection(clicked));
+        details.section("Request");
+        details.row("Method", request.getMethod());
+        details.row("URL", request.getUrl());
+        details.row("Path", activity.getRequestPath());
+        for (kotlin.Pair<String, String> header : request.getHeaders()) {
+            details.row(header.getFirst(), header.getSecond());
+        }
+
+        details.section("Response");
+        details.row("Status", activity.getResponseStatusCode());
+        details.row("Error", activity.getErrorDisplay());
+        if (activity.getTags() != null) {
+            for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
+                if (entry.getKey().startsWith(RESPONSE_HEADER_PREFIX)) {
+                    details.row(entry.getKey().substring(RESPONSE_HEADER_PREFIX.length()), entry.getValue());
                 }
             }
-        });
-        return jLabel;
+        }
     }
 
-    @NotNull
-    private JLabel createTitleLabel(@Nullable String label) {
-        JLabel title = new JLabel("<html><b>" + escapeHtml(label) + "</b></html>");
-        Font font = title.getFont();
-        font.deriveFont(Font.BOLD);
-        title.setFont(font);
-        return title;
-    }
+    private void describeDatabase(@NotNull Activity activity) {
+        if (activity.getDbQuery() == null) {
+            return;
+        }
 
-    @NotNull
-    private GridBagConstraints createConstraint(int y, int padX) {
-        return createConstraint(0, y, padX);
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private GridBagConstraints createConstraint(int x, int y, int padX) {
-        GridBagConstraints gridConstraints = new GridBagConstraints();
-        gridConstraints.gridx = x;
-        gridConstraints.gridy = y;
-        gridConstraints.gridheight = 1;
-        gridConstraints.gridwidth = 1;
-        gridConstraints.fill = GridBagConstraints.HORIZONTAL;
-        gridConstraints.weightx = 1;
-        gridConstraints.weighty = 0;
-        gridConstraints.anchor = GridBagConstraints.NORTHEAST;
-        gridConstraints.insets = JBUI.insetsLeft(padX);
-        return gridConstraints;
+        details.section("Database");
+        if (activity.getTags() != null) {
+            for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
+                String key = entry.getKey();
+                if (key.equals("db.query.text") || key.equals("db.statement")) {
+                    continue;
+                }
+                if (key.startsWith("db.") || key.startsWith("server.") || key.startsWith("network.")) {
+                    details.row(key, entry.getValue());
+                }
+            }
+        }
+        details.row("Query", activity.getDbQuery());
     }
 
     /**
-     * Escapes a string for HTML display
+     * Timing section, with a breakdown bar when the span recorded when the first response arrived.
+     */
+    private void describeTiming(@NotNull Activity activity) {
+        Duration total = activity.getDuration();
+        if (total == null) {
+            return;
+        }
+
+        details.section("Timing");
+        if (activity.getStartTime() != null) {
+            details.row("Started", activity.getStartTime().toString());
+        }
+        details.row("Duration", DurationFormatter.Companion.format(total));
+
+        Duration query = activity.getDbQueryTime();
+        Duration read = activity.getDbReadTime();
+        if (query == null || read == null || total.isZero() || total.isNegative()) {
+            return;
+        }
+
+        List<TimingBar.Segment> segments = List.of(
+                new TimingBar.Segment("Query", query, TimingBar.Colors.QUERY,
+                        "Sending the statement and waiting for the first response"),
+                new TimingBar.Segment("Read", read, TimingBar.Colors.READ,
+                        "Reading the result set once the first response arrived"));
+        details.component(new TimingBar(total, TimingBar.Colors.pad(segments, total), eventMarkers(activity, total)));
+    }
+
+    /**
+     * Span events placed on the timing bar, other than the one that already splits it.
      */
     @NotNull
-    private static String escapeHtml(@Nullable String s) {
-        if (s == null) {
-            return "";
+    private static List<TimingBar.Marker> eventMarkers(@NotNull Activity activity, @NotNull Duration total) {
+        List<TimingBar.Marker> markers = new ArrayList<>();
+        if (activity.getEvents() == null || activity.getStartTime() == null) {
+            return markers;
         }
-        return StringUtil.escapeXmlEntities(s);
+
+        for (var event : activity.getEvents()) {
+            if (event.getName() == null || event.getTimestamp() == null
+                    || event.getName().equals("received-first-response")) {
+                continue;
+            }
+            Duration offset = Duration.between(activity.getStartTime(), event.getTimestamp());
+            if (offset.isNegative() || offset.compareTo(total) > 0) {
+                continue;
+            }
+            markers.add(new TimingBar.Marker(event.getName(), offset));
+        }
+        return markers;
+    }
+
+    private void describeMetric(@NotNull jeremymorren.opentelemetry.models.Metric metric) {
+        details.header(
+                metric.getName() != null ? metric.getName() : "Metric",
+                join(metric.getMetricType(), metric.getTemporality()),
+                null);
+
+        details.section("Overview");
+        details.row("Name", metric.getName());
+        details.row("Description", metric.getDescription());
+        details.row("Type", metric.getMetricType());
+        details.row("Temporality", metric.getTemporality());
+        details.row("Meter", metric.getMeter());
+        details.row("Unit", metric.getUnit());
+        if (metric.getDuration() != null) {
+            details.row("Duration", DurationFormatter.Companion.format(metric.getDuration()));
+        }
+
+        if (metric.getTaggedPoints() == null) {
+            return;
+        }
+        details.section("Points");
+        for (var point : metric.getTaggedPoints()) {
+            if (point.getLongSum() != null) {
+                details.row("Sum", format(point.getLongSum()));
+            }
+            if (point.getDoubleSum() != null) {
+                details.row("Sum", format(point.getDoubleSum()));
+            }
+            if (point.getLongGauge() != null) {
+                details.row("Gauge", format(point.getLongGauge()));
+            }
+            if (point.getDoubleGauge() != null) {
+                details.row("Gauge", format(point.getDoubleGauge()));
+            }
+            if (point.getHistogramCount() != null) {
+                details.row("Histogram count", format(point.getHistogramCount()));
+            }
+            if (point.getHistogramSum() != null) {
+                details.row("Histogram sum", format(point.getHistogramSum()));
+            }
+            if (point.getTags() != null) {
+                for (Map.Entry<String, String> entry : point.getTags().getDisplayValues().entrySet()) {
+                    details.row(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+    }
+
+    private void describeLog(@NotNull LogMessage log) {
+        details.header(
+                log.getCustomEventName() != null ? log.getCustomEventName() : log.getType().toString(),
+                join(log.getLogLevel() == null ? null : log.getLogLevel().toString(), log.getCategoryName()),
+                logColor(log));
+
+        details.section("Overview");
+        details.row("Event", log.getCustomEventName());
+        details.row("Message", log.getFormattedMessage());
+        if (log.getLogLevel() != null) {
+            details.row("Level", log.getLogLevel().toString());
+        }
+        details.row("Category", log.getCategoryName());
+        if (log.getEventId() != null) {
+            details.row("EventId.Id", Integer.toString(log.getEventId().getId()));
+            details.row("EventId.Name", log.getEventId().getName());
+        }
+
+        if (log.getException() != null) {
+            details.section("Exception");
+            details.row("Type", log.getException().getType());
+            details.row("Message", log.getException().getMessage());
+        }
+
+        if (log.getAttributes() != null) {
+            details.section("Attributes");
+            for (Map.Entry<String, String> entry : log.getAttributes().getDisplayValues().entrySet()) {
+                details.row(entry.getKey(), entry.getValue());
+            }
+        }
+    }
+
+    @Nullable
+    private static Color logColor(@NotNull LogMessage log) {
+        if (log.getLogLevel() == null) {
+            return null;
+        }
+        return switch (log.getLogLevel()) {
+            case Warning -> JBColor.namedColor("OpenTelemetry.SeverityLevel.Warning", JBColor.orange);
+            case Error, Critical -> JBColor.namedColor("OpenTelemetry.SeverityLevel.Error", JBColor.red);
+            default -> null;
+        };
+    }
+
+    @Nullable
+    private static String join(@Nullable String... parts) {
+        StringBuilder joined = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+            if (!joined.isEmpty()) {
+                joined.append("  \u00b7  ");
+            }
+            joined.append(part);
+        }
+        return joined.isEmpty() ? null : joined.toString();
     }
 
     /**
