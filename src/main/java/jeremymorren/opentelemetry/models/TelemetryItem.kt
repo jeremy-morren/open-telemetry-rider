@@ -16,6 +16,11 @@ data class TelemetryItem(
 {
     val lowerCaseJson: String = json.lowercase(Locale.getDefault())
 
+    /** The text the table shows, untruncated; searching matches this as well as the JSON. */
+    val displayText: String = telemetry.displayText ?: ""
+
+    val lowerCaseDisplayText: String = displayText.lowercase(Locale.getDefault())
+
     val timestamp: Instant? = telemetry.timestamp
 
     val duration: Duration? = telemetry.activity?.duration

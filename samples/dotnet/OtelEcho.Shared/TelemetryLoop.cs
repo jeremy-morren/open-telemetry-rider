@@ -1,12 +1,16 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 // ReSharper disable EmptyGeneralCatchClause
 
-namespace OtelEcho;
+namespace OtelEcho.Shared;
 
-public class TelemetryLoop(ILogger<TelemetryLoop> logger) : BackgroundService
+public class TelemetryLoop(ILogger<TelemetryLoop> logger, IServer server) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -18,6 +22,7 @@ public class TelemetryLoop(ILogger<TelemetryLoop> logger) : BackgroundService
                 await ConnectToPg();
                 await DoSomeWork();
                 await HttpRequest();
+                EmitCustomEvent();
                 await Task.Delay(5000, stoppingToken);
             }
         }
@@ -28,6 +33,12 @@ public class TelemetryLoop(ILogger<TelemetryLoop> logger) : BackgroundService
     }
 
     public static readonly ActivitySource Source = new ("Sample.DistributedTracing");
+
+    /// <summary>
+    /// The address this app is actually listening on, so each sample calls itself rather than the other one.
+    /// </summary>
+    private string? SelfBaseUrl =>
+        server.Features.Get<IServerAddressesFeature>()?.Addresses.FirstOrDefault()?.TrimEnd('/');
 
     // All the functions below simulate doing some arbitrary work
     private static async Task DoSomeWork()
@@ -106,15 +117,19 @@ public class TelemetryLoop(ILogger<TelemetryLoop> logger) : BackgroundService
         {
             using var response = await HttpClient.GetAsync("https://github.com/");
 
-            logger.LogInformation("HTTP {Method} {Url} returned {@StatusCode}", 
+            logger.LogInformation("HTTP {Method} {Url} returned {@StatusCode}",
                 response.RequestMessage?.Method,
                 response.RequestMessage?.RequestUri,
                 response.StatusCode);
-            
-            await HttpClient.GetAsync("http://localhost:5119/swagger");
-            await HttpClient.GetAsync("http://localhost:5119/api/WeatherForecast/Random");
-            await HttpClient.GetAsync("http://localhost:5119/api/WeatherForecast/ForCity/Kingstown?street=Halifax");
-            await HttpClient.GetAsync("http://localhost:5119/DoesntExist");
+
+            var self = SelfBaseUrl;
+            if (self != null)
+            {
+                await HttpClient.GetAsync($"{self}/api/WeatherForecast/Random");
+                await HttpClient.GetAsync($"{self}/api/WeatherForecast/ForCity/Kingstown?street=Halifax");
+                await HttpClient.GetAsync($"{self}/DoesntExist");
+            }
+
             await HttpClient.GetAsync("http://localhost:1111");
         }
         catch (Exception e)
@@ -122,6 +137,39 @@ public class TelemetryLoop(ILogger<TelemetryLoop> logger) : BackgroundService
             logger.LogError(e, "An error occurred sending the request");
         }
     }
-    
-    private static readonly HttpClient HttpClient = new ();
+
+    /// <summary>
+    /// Emits an Azure Monitor custom event.
+    /// </summary>
+    /// <remarks>
+    /// A custom event is an ordinary log record carrying the <c>microsoft.custom_event.name</c>
+    /// attribute; putting that name in the message template is all it takes. The Azure Monitor exporter
+    /// turns such records into rows in the <c>customEvents</c> table, and no Azure Monitor package is
+    /// needed to produce one - which is why this sample has none, and nothing to upload.
+    /// See https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-add-modify
+    /// </remarks>
+    private void EmitCustomEvent()
+    {
+        _checkouts++;
+#pragma warning disable CA2254 // The template is the point: its holes become the event's properties.
+        logger.LogInformation(
+            "{microsoft.custom_event.name} {CheckoutNumber} {Basket}",
+            "Checkout", _checkouts, "2 items");
+#pragma warning restore CA2254
+    }
+
+    private int _checkouts;
+
+    private static readonly HttpClient HttpClient = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient();
+        // Headers worth seeing in a copied curl command. The note deliberately contains a quote and a
+        // bang, which are the characters that force bash into ANSI-C quoting.
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+        client.DefaultRequestHeaders.Add("User-Agent", "OtelEcho/1.0");
+        client.DefaultRequestHeaders.Add("X-Sample-Note", "it's a test!");
+        return client;
+    }
 }

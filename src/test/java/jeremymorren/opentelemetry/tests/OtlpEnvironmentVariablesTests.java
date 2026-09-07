@@ -1,12 +1,8 @@
 package jeremymorren.opentelemetry.tests;
 
 import jeremymorren.opentelemetry.otlp.OtlpEnvironmentVariables;
-import jeremymorren.opentelemetry.otlp.OtlpProjectScope;
-import org.junit.Assert;
 import org.junit.Test;
 
-import com.intellij.openapi.project.Project;
-import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.util.Map;
 
@@ -14,8 +10,12 @@ public class OtlpEnvironmentVariablesTests {
     @Test
     public void resolvesPlaceholdersIntoConcreteValues() {
         Map<String, String> resolved = OtlpEnvironmentVariables.resolve(
-                "OTEL_EXPORTER_OTLP_ENDPOINT=${OTLP_ENDPOINT}\nOTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\nCUSTOM=${OTLP_HOST}:${OTLP_PORT}",
-                URI.create("http://127.0.0.1:4318")
+                String.join("\n",
+                        "OTEL_EXPORTER_OTLP_ENDPOINT=${OTLP_ENDPOINT}",
+                        "OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
+                        "CUSTOM=${OTLP_HOST}:${OTLP_PORT}"),
+                URI.create("http://127.0.0.1:4318"),
+                100
         );
 
         assert "http://127.0.0.1:4318".equals(resolved.get("OTEL_EXPORTER_OTLP_ENDPOINT"));
@@ -24,30 +24,31 @@ public class OtlpEnvironmentVariablesTests {
     }
 
     @Test
-    public void buildsScopedEndpointFromProjectLocationHash() {
-        Project project = (Project) Proxy.newProxyInstance(
-                Project.class.getClassLoader(),
-                new Class[]{Project.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "getLocationHash" -> "scope-123";
-                    case "getName" -> "MyProject";
-                    case "toString" -> "Project(scope-123)";
-                    default -> null;
-                }
+    public void resolvesConfiguredFlushInterval() {
+        Map<String, String> resolved = OtlpEnvironmentVariables.resolve(
+                String.join("\n",
+                        "OTEL_BSP_SCHEDULE_DELAY=${OTLP_FLUSH_INTERVAL}",
+                        "OTEL_BLRP_SCHEDULE_DELAY=${OTLP_FLUSH_INTERVAL}"),
+                URI.create("http://127.0.0.1:4318"),
+                2500
         );
 
-        URI scoped = OtlpProjectScope.buildScopedEndpoint(URI.create("http://127.0.0.1:4318"), project);
-
-        Assert.assertEquals("http://127.0.0.1:4318/scope-123/v1", scoped.toString());
+        assert "2500".equals(resolved.get("OTEL_BSP_SCHEDULE_DELAY"));
+        assert "2500".equals(resolved.get("OTEL_BLRP_SCHEDULE_DELAY"));
     }
 
     @Test
-    public void extractsScopeKeyFromScopedSignalPath() {
-        Assert.assertEquals("scope-123", OtlpProjectScope.tryExtractScopeKey("/scope-123/v1/logs"));
-    }
+    public void defaultTemplateUsesTheConfiguredFlushInterval() {
+        Map<String, String> resolved = OtlpEnvironmentVariables.resolve(
+                OtlpEnvironmentVariables.DEFAULT_ENVIRONMENT_VARIABLES,
+                URI.create("http://127.0.0.1:4318/scope-123"),
+                750
+        );
 
-    @Test
-    public void returnsNullWhenScopedSignalPathIsInvalid() {
-        Assert.assertNull(OtlpProjectScope.tryExtractScopeKey("/v1/logs"));
+        assert "http://127.0.0.1:4318/scope-123".equals(resolved.get("OTEL_EXPORTER_OTLP_ENDPOINT"));
+        assert "750".equals(resolved.get("OTEL_BSP_SCHEDULE_DELAY"));
+        assert "750".equals(resolved.get("OTEL_BLRP_SCHEDULE_DELAY"));
+        // The metric interval ships commented out, so OpenTelemetry's 60s default is left alone.
+        assert !resolved.containsKey("OTEL_METRIC_EXPORT_INTERVAL");
     }
 }

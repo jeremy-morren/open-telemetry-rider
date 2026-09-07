@@ -28,6 +28,8 @@ public class AppSettingsConfigurable implements SearchableConfigurable {
         AppSettingState settings = AppSettingState.getInstance();
         return settingsComponent.getEnableLoopbackOtlpReceiver() != settings.enableLoopbackOtlpReceiver.getValue()
                 || settingsComponent.getInjectOtlpEnvironmentVariables() != settings.injectOtlpEnvironmentVariables.getValue()
+                || settingsComponent.getAppendCurlCompressed() != settings.appendCurlCompressed.getValue()
+                || settingsComponent.getFlushIntervalMillis() != settings.otlpFlushIntervalMillis
                 || !Objects.equals(settingsComponent.getOtlpEnvironmentVariables(), settings.otlpEnvironmentVariables);
     }
 
@@ -36,6 +38,8 @@ public class AppSettingsConfigurable implements SearchableConfigurable {
         AppSettingState settings = AppSettingState.getInstance();
         settings.enableLoopbackOtlpReceiver.setValue(settingsComponent.getEnableLoopbackOtlpReceiver());
         settings.injectOtlpEnvironmentVariables.setValue(settingsComponent.getInjectOtlpEnvironmentVariables());
+        settings.appendCurlCompressed.setValue(settingsComponent.getAppendCurlCompressed());
+        settings.otlpFlushIntervalMillis = settingsComponent.getFlushIntervalMillis();
         settings.otlpEnvironmentVariables = settingsComponent.getOtlpEnvironmentVariables();
     }
 
@@ -44,6 +48,8 @@ public class AppSettingsConfigurable implements SearchableConfigurable {
         AppSettingState settings = AppSettingState.getInstance();
         settingsComponent.setEnableLoopbackOtlpReceiver(settings.enableLoopbackOtlpReceiver.getValue());
         settingsComponent.setInjectOtlpEnvironmentVariables(settings.injectOtlpEnvironmentVariables.getValue());
+        settingsComponent.setAppendCurlCompressed(settings.appendCurlCompressed.getValue());
+        settingsComponent.setFlushIntervalMillis(settings.otlpFlushIntervalMillis);
         settingsComponent.setOtlpEnvironmentVariables(settings.otlpEnvironmentVariables);
     }
 

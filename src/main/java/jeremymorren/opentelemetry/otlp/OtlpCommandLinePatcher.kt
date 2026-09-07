@@ -11,7 +11,11 @@ object OtlpCommandLinePatcher {
             return
         }
 
-        val resolved = OtlpEnvironmentVariables.resolve(settings.otlpEnvironmentVariables, endpoint)
+        val resolved = OtlpEnvironmentVariables.resolve(
+            settings.otlpEnvironmentVariables,
+            endpoint,
+            settings.otlpFlushIntervalMillis,
+        )
         commandLine.withEnvironment(resolved)
     }
 }

@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 
@@ -52,7 +53,6 @@ repositories {
 dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
-    implementation(libs.apacheCommonsText)
     implementation(libs.jacksonDatabind)
     implementation(libs.jacksonDatatypeJsr310)
     implementation(libs.protobufJava)
@@ -176,6 +176,13 @@ tasks {
 
 intellijPlatformTesting {
     runIde {
+        // Sandbox against the next IDE release, so the plugin can be tried out there before it ships.
+        register("runIdeNext") {
+            type = IntelliJPlatformType.Rider
+            version = providers.gradleProperty("nextPlatformVersion")
+            useInstaller = useInstallerForPlatform
+        }
+
         register("runIdeForUiTests") {
             task {
                 jvmArgumentProviders += CommandLineArgumentProvider {

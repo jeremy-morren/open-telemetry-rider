@@ -1,6 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 
-namespace OtelEcho;
+namespace OtelEcho.Shared;
 
 [ApiController, Route("/api/[controller]/[action]")]
 public class WeatherForecastController
@@ -9,7 +9,7 @@ public class WeatherForecastController
     [
         "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
     ];
-    
+
     [HttpGet]
     public WeatherForecast[] Random()
     {

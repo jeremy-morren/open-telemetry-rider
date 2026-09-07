@@ -6,7 +6,6 @@ protobuf = "4.35.1"
 opentelemetryProto = "1.10.0"
 protobufGradlePlugin = "0.10.0"
 jackson = "2.21.4"
-apacheCommonsText = "1.15.0"
 
 # plugins
 changelog = "2.5.0"
@@ -19,7 +18,6 @@ test-logger = "4.0.0"
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 opentest4j = { group = "org.opentest4j", name = "opentest4j", version.ref = "opentest4j" }
-apacheCommonsText = { group = "org.apache.commons", name = "commons-text", version.ref = "apacheCommonsText" }
 protobufJava = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobuf" }
 protobufJavaUtil = { group = "com.google.protobuf", name = "protobuf-java-util", version.ref = "protobuf" }
 protobufProtoc = { group = "com.google.protobuf", name = "protoc", version.ref = "protobuf" }

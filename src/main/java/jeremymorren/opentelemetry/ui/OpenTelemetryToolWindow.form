@@ -131,7 +131,7 @@
           </tabbedpane>
         </children>
       </splitpane>
-      <grid id="53d4d" layout-manager="GridLayoutManager" row-count="2" column-count="12" same-size-horizontally="false" same-size-vertically="false" hgap="4" vgap="0">
+      <grid id="53d4d" layout-manager="GridLayoutManager" row-count="2" column-count="14" same-size-horizontally="false" same-size-vertically="false" hgap="4" vgap="0">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
           <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="3" hsize-policy="5" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
@@ -272,6 +272,29 @@
           <component id="a50a5" class="javax.swing.JLabel" binding="messageCounter">
             <constraints>
               <grid row="1" column="5" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="5" fill="0" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties>
+              <text value="0"/>
+            </properties>
+          </component>
+          <component id="ev1a1" class="jeremymorren.opentelemetry.ui.components.ColorBox" binding="eventColorBox" custom-create="true">
+            <constraints>
+              <grid row="0" column="12" row-span="2" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties/>
+          </component>
+          <component id="ev1a2" class="javax.swing.JCheckBox" binding="eventCheckBox">
+            <constraints>
+              <grid row="0" column="13" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="0" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties>
+              <text value="Event"/>
+              <toolTipText value=""/>
+            </properties>
+          </component>
+          <component id="ev1a3" class="javax.swing.JLabel" binding="eventCounter">
+            <constraints>
+              <grid row="1" column="13" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="5" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
               <text value="0"/>

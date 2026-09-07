@@ -12,23 +12,27 @@ data class LogMessage(
     val traceId: String? = null,
     val spanId: String? = null,
     val categoryName: String? = null,
-    val eventId: EventId? = null
+    val eventId: EventId? = null,
+    /**
+     * Name of the Azure Monitor custom event this log record represents, if any.
+     * See [CUSTOM_EVENT_NAME_ATTRIBUTE].
+     */
+    val customEventName: String? = null
 )
 {
-    /**
-     * The telemetry type (determined from the log message).
-     */
+    /** The telemetry type (determined from the log message). */
     val type: TelemetryType get() =
-        if (exception != null) {
+        if (customEventName != null) {
+            TelemetryType.Event
+        }
+        else if (exception != null) {
             TelemetryType.Exception
         }
         else {
             TelemetryType.Message
         }
 
-    /**
-     * Gets the trace IDs as a map.
-     */
+    /** Gets the trace IDs as a map. */
     val traceIds: Map<String, String>? get() {
         val traceIds = mutableMapOf<String, String>()
         if (traceId != null)
@@ -41,10 +45,12 @@ data class LogMessage(
         return traceIds
     }
 
-    /**
-     * The display message.
-     */
+    /** The display message. */
     val displayMessage: String? get() {
+        if (customEventName != null) {
+            val message = formattedMessage?.takeUnless { it.isBlank() }
+            return flatten(if (message == null) customEventName else "$customEventName - $message")
+        }
         if (logLevel == null || formattedMessage == null) {
             return null
         }
@@ -57,9 +63,18 @@ data class LogMessage(
             LogLevel.Critical -> "FTL"
             else -> null
         }
-        return "[$level] $formattedMessage"
-            .replace("\r", "")
-            .replace("\n", " ")
+        return flatten("[$level] $formattedMessage")
+    }
+
+    /** Flattens a message onto a single line, so it reads - and searches - the way the table shows it. */
+    private fun flatten(message: String) = message.replace("\r", "").replace("\n", " ")
+
+    companion object {
+        /**
+         * Attribute the Azure Monitor OpenTelemetry distro reads to turn a log record into a
+         * CustomEvent. See https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-add-modify
+         */
+        const val CUSTOM_EVENT_NAME_ATTRIBUTE = "microsoft.custom_event.name"
     }
 }
 

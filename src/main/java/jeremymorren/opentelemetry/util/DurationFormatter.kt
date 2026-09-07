@@ -8,9 +8,7 @@ class DurationFormatter {
     companion object {
 
 
-        /**
-         * Formats a duration as a string.
-         */
+        /** Formats a duration as a string. */
         public fun format(duration: Duration): String {
             if (duration.isNegative) {
                 return "-" + formatInternal(duration.negated())

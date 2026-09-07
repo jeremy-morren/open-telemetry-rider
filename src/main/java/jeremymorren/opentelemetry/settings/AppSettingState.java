@@ -31,7 +31,14 @@ public class AppSettingState implements PersistentStateComponentWithModification
     public final Property<Boolean> enableLoopbackOtlpReceiver = new Property<>(true);
     @OptionTag(converter = BooleanPropertyConverter.class)
     public final Property<Boolean> injectOtlpEnvironmentVariables = new Property<>(true);
+    /** Whether copied curl commands end with --compressed, the way Chrome DevTools writes them. */
+    @OptionTag(converter = BooleanPropertyConverter.class)
+    public final Property<Boolean> appendCurlCompressed = new Property<>(true);
     public String otlpEnvironmentVariables = OtlpEnvironmentVariables.DEFAULT_ENVIRONMENT_VARIABLES;
+    /**
+     * Value of the {@code ${OTLP_FLUSH_INTERVAL}} placeholder, in milliseconds.
+     */
+    public int otlpFlushIntervalMillis = OtlpEnvironmentVariables.DEFAULT_FLUSH_INTERVAL_MILLIS;
 
     public AppSettingState() {
         registerAllPropertyToIncrementTrackerOnChanges(this);
@@ -62,6 +69,7 @@ public class AppSettingState implements PersistentStateComponentWithModification
         incrementTrackerWhenPropertyChanges(state.filterTelemetryMode);
         incrementTrackerWhenPropertyChanges(state.enableLoopbackOtlpReceiver);
         incrementTrackerWhenPropertyChanges(state.injectOtlpEnvironmentVariables);
+        incrementTrackerWhenPropertyChanges(state.appendCurlCompressed);
     }
 
     private <T> void incrementTrackerWhenPropertyChanges(Property<T> property) {

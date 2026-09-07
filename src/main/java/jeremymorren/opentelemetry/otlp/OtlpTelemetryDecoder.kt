@@ -20,7 +20,8 @@ import jeremymorren.opentelemetry.models.*
 import kotlinx.serialization.json.*
 import java.time.Duration
 import java.time.Instant
-import java.util.*
+import java.util.Base64
+import java.util.HexFormat
 
 class OtlpTelemetryDecoder(
     private val telemetryFactory: TelemetryFactory = TelemetryFactory(),
@@ -124,6 +125,7 @@ class OtlpTelemetryDecoder(
             spanId = bytesToHex(logRecord.spanId).takeUnless { it.isNullOrBlank() },
             categoryName = attributes?.getString("categoryName") ?: scope.name.takeUnless { it.isBlank() },
             eventId = attributes?.getString("event.id")?.toIntOrNull()?.let { EventId(it, attributes.getString("event.name")) },
+            customEventName = attributes?.getString(LogMessage.CUSTOM_EVENT_NAME_ATTRIBUTE)?.takeUnless { it.isBlank() },
         )
 
         return Telemetry(log = log, resource = resource)
@@ -379,9 +381,7 @@ class OtlpTelemetryDecoder(
             return null
         }
 
-        return bytes.toByteArray().joinToString(separator = "") { byte ->
-            "%02x".format(byte.toInt() and 0xff)
-        }
+        return HexFormat.of().formatHex(bytes.toByteArray())
     }
 
 }

@@ -44,7 +44,7 @@ class TelemetryTableModel : AbstractTableModel() {
 
     fun addRow(i: Int, telemetry: TelemetryItem) {
         telemetries.add(i, telemetry)
-        this.fireTableRowsInserted(telemetries.size - 1, telemetries.size - 1)
+        this.fireTableRowsInserted(i, i)
     }
 
     fun setRows(telemetries: List<TelemetryItem>) {

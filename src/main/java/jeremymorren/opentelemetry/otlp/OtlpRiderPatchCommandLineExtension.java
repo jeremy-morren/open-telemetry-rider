@@ -56,9 +56,10 @@ public final class OtlpRiderPatchCommandLineExtension implements PatchCommandLin
             return;
         }
 
-        var endpoint = OtlpProjectScope.buildScopedEndpoint(
+        // Every launch gets its own scope so a debug session only ever sees telemetry from its own process.
+        var endpoint = OtlpSessionScope.buildScopedEndpoint(
                 OtlpHttpReceiverService.getInstance().ensureStarted(),
-                project
+                OtlpSessionScope.registerPending(project)
         );
         OtlpCommandLinePatcher.patchEnvironment(commandLine, settings, endpoint);
     }

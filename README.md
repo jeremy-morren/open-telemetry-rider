@@ -17,6 +17,10 @@ Traces are parsed as Dependencies where format is known e.g. HTTP & SQL
 NB: This plugin is incompatible with the built-in Rider OpenTelemetry plugin, 
 because it overrides the necessary environment variables.
 
+Third-party software bundled with this plugin is listed in
+[THIRD-PARTY-NOTICES.md](https://github.com/jeremy-morren/open-telemetry-rider/blob/main/src/main/resources/META-INF/THIRD-PARTY-NOTICES.md);
+a copy ships inside the plugin along with the full license texts.
+
 <!-- Plugin description end -->
 
 ## Installation
@@ -47,6 +51,18 @@ Run the following command to build and verify the plugin:
 ```shell
 $ ./gradlew :verifyPlugin
 ```
+
+To try the plugin in a sandbox of the next IDE release (`nextPlatformVersion` in `gradle.properties`):
+
+```shell
+$ ./gradlew :runIdeNext
+```
+
+## Third party notices
+
+The plugin bundles a small number of third party libraries. They are listed, with their licenses, in
+[THIRD-PARTY-NOTICES.md](src/main/resources/META-INF/THIRD-PARTY-NOTICES.md), which is distributed
+inside the plugin along with the full license texts.
 
 ## Contributing
 

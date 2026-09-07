@@ -17,8 +17,14 @@ data class Telemetry(
     val type: TelemetryType? = activity?.type ?: log?.type ?: metric?.type
 
     /**
-     * The timestamp of the telemetry.
+     * The text the table shows for this telemetry, untruncated.
+     *
+     * Searching matches against this as well as the raw JSON, so a filter can match what is on screen
+     * (including text the column had to cut off, and multi-line SQL flattened onto one line).
      */
+    val displayText: String? = activity?.detailFull ?: metric?.detail ?: log?.displayMessage
+
+    /** The timestamp of the telemetry. */
     val timestamp: Instant? get() {
         val ts = activity?.startTime
             ?: log?.timestamp
@@ -29,9 +35,7 @@ data class Telemetry(
         return null
     }
 
-    /**
-     * Exception (formatted) if available.
-     */
+    /** Exception (formatted) if available. */
     val exception: String? = activity?.exception?.display ?: log?.exception?.display
 }
 
@@ -42,6 +46,8 @@ data class Telemetry(
  * @property Dependency The telemetry is a dependency (e.g. HTTP, SQL).
  * @property Metric The telemetry is a metric.
  * @property Message The telemetry is a log message
+ * @property Event The telemetry is an Azure Monitor custom event (a log carrying
+ *   `microsoft.custom_event.name`).
  * @property Exception The telemetry is a log message or activity with an exception.
  */
 enum class TelemetryType {
@@ -50,5 +56,6 @@ enum class TelemetryType {
     Dependency,
     Metric,
     Message,
+    Event,
     Exception
 }

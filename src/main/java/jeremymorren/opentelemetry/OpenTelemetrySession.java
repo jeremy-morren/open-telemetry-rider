@@ -3,19 +3,19 @@ package jeremymorren.opentelemetry;
 import com.intellij.execution.process.ProcessEvent;
 import com.intellij.execution.process.ProcessListener;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.IconLoader;
 import com.jetbrains.rd.util.lifetime.Lifetime;
 import com.jetbrains.rider.debugger.DotNetDebugProcess;
 import jeremymorren.opentelemetry.models.TelemetryItem;
 import jeremymorren.opentelemetry.models.TelemetryType;
 import jeremymorren.opentelemetry.otlp.OtlpHttpReceiverService;
-import jeremymorren.opentelemetry.otlp.OtlpProjectScope;
+import jeremymorren.opentelemetry.otlp.OtlpSessionScope;
 import jeremymorren.opentelemetry.settings.AppSettingState;
 import jeremymorren.opentelemetry.settings.FilterTelemetryMode;
 import jeremymorren.opentelemetry.settings.ProjectSettingsState;
 import jeremymorren.opentelemetry.ui.OpenTelemetryToolWindow;
 import kotlin.Unit;
-import org.eclipse.lsp4j.jsonrpc.validation.NonNull;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,6 +26,7 @@ import java.util.*;
 import java.util.stream.Stream;
 
 public class OpenTelemetrySession {
+    private static final Logger LOG = Logger.getInstance(OpenTelemetrySession.class);
     @NotNull
     private static final Icon ICON = IconLoader.getIcon("/icons/pluginIcon.svg", OpenTelemetrySession.class);
     @NotNull
@@ -36,8 +37,12 @@ public class OpenTelemetrySession {
     private final List<TelemetryItem> filteredTelemetries = new ArrayList<>();
     @NotNull
     private final Lifetime lifetime;
-    @NotNull
-    private final String projectScopeKey;
+    /**
+     * Scope of the launch this session belongs to; null when the launch was not patched by this plugin
+     * (e.g. attaching to an already running process), in which case no telemetry is routed here.
+     */
+    @Nullable
+    private final String scopeKey;
     @NotNull
     private String filter = "";
 
@@ -51,6 +56,11 @@ public class OpenTelemetrySession {
      */
     private String filterLowerCaseEscaped = "";
 
+    /**
+     * Filter string in lower case, unescaped (matched against the rendered row text)
+     */
+    private String filterLowerCase = "";
+
 
     @Nullable
     private OpenTelemetryToolWindow openTelemetryToolWindow;
@@ -58,13 +68,19 @@ public class OpenTelemetrySession {
     private AutoCloseable telemetryListenerRegistration;
     private boolean firstMessage = true;
     private final ProjectSettingsState projectSettingsState;
+    /**
+     * Run configuration this session belongs to; telemetry type filters are remembered against it, so
+     * two services of the same solution keep their own filters and keep them across restarts.
+     */
+    @Nullable
+    private String filterConfiguration;
 
     public OpenTelemetrySession(
             @NotNull DotNetDebugProcess dotNetDebugProcess
     ) {
         this.dotNetDebugProcess = dotNetDebugProcess;
         this.lifetime = dotNetDebugProcess.getSessionLifetime();
-        this.projectScopeKey = OtlpProjectScope.getScopeKey(dotNetDebugProcess.getProject());
+        this.scopeKey = OtlpSessionScope.claimPending(dotNetDebugProcess.getProject());
 
         projectSettingsState = ProjectSettingsState.getInstance(dotNetDebugProcess.getProject());
 
@@ -83,8 +99,12 @@ public class OpenTelemetrySession {
     }
 
     public void startListeningToOtlpReceiver() {
+        if (scopeKey == null) {
+            LOG.info("No OTLP scope was allocated for this debug session; telemetry will not be captured");
+            return;
+        }
         OtlpHttpReceiverService.getInstance().ensureStarted();
-        telemetryListenerRegistration = OtlpHttpReceiverService.getInstance().addListener(projectScopeKey, this::addTelemetry);
+        telemetryListenerRegistration = OtlpHttpReceiverService.getInstance().addListener(scopeKey, this::addTelemetry);
         dotNetDebugProcess.getProcessHandler().addProcessListener(new ProcessListener() {
             @Override
             public void processTerminated(@NotNull ProcessEvent event) {
@@ -94,26 +114,42 @@ public class OpenTelemetrySession {
     }
 
     public boolean isTelemetryVisible(@NotNull TelemetryType telemetryType) {
-        return projectSettingsState.getTelemetryVisible(telemetryType);
+        return projectSettingsState.getTelemetryVisible(getFilterConfiguration(), telemetryType);
     }
 
     public void setTelemetryVisible(@NotNull TelemetryType telemetryType, boolean visible) {
-        projectSettingsState.setTelemetryVisible(telemetryType, visible);
+        projectSettingsState.setTelemetryVisible(getFilterConfiguration(), telemetryType, visible);
         updateFilteredTelemetries();
     }
 
-    public void updateFilter(@NonNull String filter) {
+    @NotNull
+    private String getFilterConfiguration() {
+        if (filterConfiguration == null) {
+            // Resolved lazily: the session name is not necessarily available while the process starts.
+            String name = null;
+            try {
+                name = dotNetDebugProcess.getSession().getSessionName();
+            } catch (Exception ignored) {
+            }
+            filterConfiguration = name == null || name.isBlank()
+                    ? dotNetDebugProcess.getProject().getName()
+                    : name;
+        }
+        return filterConfiguration;
+    }
+
+    public void updateFilter(@NotNull String filter) {
         this.filter = filter;
 
         //NB: We have to escape the string to JSON to allow filtering on special characters
         this.filterEscaped = escapeJson(filter);
         this.filterLowerCaseEscaped = filterEscaped.toLowerCase(Locale.ROOT);
+        this.filterLowerCase = filter.toLowerCase(Locale.ROOT);
 
         updateFilteredTelemetries();
     }
 
     public void clear() {
-        OtlpHttpReceiverService.getInstance().clear(projectScopeKey);
         synchronized (telemetries) {
             this.telemetries.clear();
             this.filteredTelemetries.clear();
@@ -139,14 +175,14 @@ public class OpenTelemetrySession {
                 switch (value) {
                     case Timestamp:
                         idx = Collections.binarySearch(filteredTelemetries, telemetry,
-                                Comparator.comparing(OpenTelemetrySession::getDuration));
+                                Comparator.comparing(OpenTelemetrySession::getTimestamp));
                         if (idx < 0)
                             idx = ~idx;
                         filteredTelemetries.add(idx, telemetry);
                         break;
                     case Duration:
                         idx = Collections.binarySearch(filteredTelemetries, telemetry,
-                                Comparator.comparing(OpenTelemetrySession::getTimestamp));
+                                Comparator.comparing(OpenTelemetrySession::getDuration));
                         if (idx < 0)
                             idx = ~idx;
                         filteredTelemetries.add(idx, telemetry);
@@ -224,14 +260,16 @@ public class OpenTelemetrySession {
 
     private boolean isTelemetryVisible(@NotNull TelemetryItem telemetry) {
         var type = telemetry.getTelemetry().getType();
-        if (type != null && !projectSettingsState.getTelemetryVisible(type))
+        if (type != null && !isTelemetryVisible(type))
             return false;
 
         if (!filter.isEmpty()) {
             if (AppSettingState.getInstance().caseInsensitiveSearch.getValue())
-                return telemetry.getLowerCaseJson().toLowerCase().contains(filterLowerCaseEscaped);
+                return telemetry.getLowerCaseDisplayText().contains(filterLowerCase)
+                        || telemetry.getLowerCaseJson().contains(filterLowerCaseEscaped);
             else
-                return telemetry.getJson().contains(filterEscaped);
+                return telemetry.getDisplayText().contains(filter)
+                        || telemetry.getJson().contains(filterEscaped);
         }
 
         return true;

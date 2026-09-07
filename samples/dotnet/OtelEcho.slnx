@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="OtelEcho/OtelEcho.csproj" />
+  <Project Path="OtelEcho.Shared/OtelEcho.Shared.csproj" />
+  <Project Path="OtelEcho.NoHeaders/OtelEcho.NoHeaders.csproj" />
+  <Project Path="OtelEcho.WithHeaders/OtelEcho.WithHeaders.csproj" />
 </Solution>

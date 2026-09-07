@@ -49,46 +49,33 @@ import java.util.function.Consumer;
 
 public class OtlpHttpReceiverServiceTests {
     @Test
-    public void addListenerReplaysOnlyMatchingScopeHistory() throws Exception {
+    public void telemetryIsNotBufferedForListenersRegisteredLater() throws Exception {
         OtlpHttpReceiverService service = new OtlpHttpReceiverService();
-        TelemetryItem projectOneTelemetry = telemetry("project-one");
-        TelemetryItem projectTwoTelemetry = telemetry("project-two");
 
-        publish(service, "project-one", projectOneTelemetry);
-        publish(service, "project-two", projectTwoTelemetry);
+        publish(service, "project-one", telemetry("project-one"));
 
-        List<TelemetryItem> projectOneReceived = new ArrayList<>();
-        List<TelemetryItem> projectTwoReceived = new ArrayList<>();
+        List<TelemetryItem> received = new ArrayList<>();
+        service.addListener("project-one", (Consumer<TelemetryItem>) received::add);
 
-        service.addListener("project-one", (Consumer<TelemetryItem>) projectOneReceived::add);
-        service.addListener("project-two", (Consumer<TelemetryItem>) projectTwoReceived::add);
-
-        assert projectOneReceived.size() == 1;
-        assert projectOneReceived.get(0) == projectOneTelemetry;
-        assert projectTwoReceived.size() == 1;
-        assert projectTwoReceived.get(0) == projectTwoTelemetry;
+        // A new debug session must start from an empty log, even when an earlier session in the same
+        // project already received telemetry.
+        assert received.isEmpty();
     }
 
     @Test
-    public void clearRemovesOnlyMatchingScopeHistory() throws Exception {
+    public void telemetryIsOnlyPublishedToItsOwnScope() throws Exception {
         OtlpHttpReceiverService service = new OtlpHttpReceiverService();
-        TelemetryItem projectOneTelemetry = telemetry("project-one");
-        TelemetryItem projectTwoTelemetry = telemetry("project-two");
-
-        publish(service, "project-one", projectOneTelemetry);
-        publish(service, "project-two", projectTwoTelemetry);
-
-        service.clear("project-one");
-
         List<TelemetryItem> projectOneReceived = new ArrayList<>();
         List<TelemetryItem> projectTwoReceived = new ArrayList<>();
-
         service.addListener("project-one", (Consumer<TelemetryItem>) projectOneReceived::add);
         service.addListener("project-two", (Consumer<TelemetryItem>) projectTwoReceived::add);
 
-        assert projectOneReceived.isEmpty();
-        assert projectTwoReceived.size() == 1;
-        assert projectTwoReceived.get(0) == projectTwoTelemetry;
+        TelemetryItem projectOneTelemetry = telemetry("project-one");
+        publish(service, "project-one", projectOneTelemetry);
+
+        assert projectOneReceived.size() == 1;
+        assert projectOneReceived.get(0) == projectOneTelemetry;
+        assert projectTwoReceived.isEmpty();
     }
 
     @Test
@@ -154,6 +141,17 @@ public class OtlpHttpReceiverServiceTests {
 
         assert received.size() == 1;
         assert received.get(0).getTelemetry().getType() == TelemetryType.Exception;
+    }
+
+    @Test
+    public void handleRejectsUnscopedPath() throws Exception {
+        OtlpHttpReceiverService service = new OtlpHttpReceiverService();
+        FakeHttpExchange exchange = new FakeHttpExchange("POST", "/v1/logs", new byte[0]);
+
+        handle(service, exchange);
+
+        assert exchange.responseCode == 404;
+        assert "Not Found".equals(exchange.responseBodyAsString());
     }
 
     @Test

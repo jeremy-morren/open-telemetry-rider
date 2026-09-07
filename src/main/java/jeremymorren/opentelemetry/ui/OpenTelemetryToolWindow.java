@@ -1,6 +1,7 @@
 package jeremymorren.opentelemetry.ui;
 
 import com.intellij.codeInsight.folding.CodeFoldingManager;
+import com.intellij.icons.AllIcons;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.execution.impl.ConsoleViewImpl;
@@ -10,7 +11,6 @@ import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.json.JsonLanguage;
 import com.intellij.lang.Language;
 import com.intellij.openapi.actionSystem.*;
-import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
@@ -22,13 +22,18 @@ import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.LanguageTextField;
+import com.intellij.ui.PopupHandler;
+import com.intellij.ui.components.fields.ExtendableTextComponent;
 import com.intellij.ui.components.fields.ExtendableTextField;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.concurrency.AppExecutorUtil;
@@ -36,8 +41,10 @@ import com.intellij.util.ui.JBUI;
 import com.jetbrains.rider.stacktrace.RiderStacktraceUtil;
 import com.jetbrains.rider.unitTesting.RiderUnitTestConsoleHyperlinkFilter;
 import com.jetbrains.rd.util.lifetime.Lifetime;
-import groovy.lang.Tuple2;
+import jeremymorren.opentelemetry.OpenTelemetryBundle;
 import jeremymorren.opentelemetry.OpenTelemetrySession;
+import jeremymorren.opentelemetry.settings.AppSettingState;
+import jeremymorren.opentelemetry.http.HttpTelemetryRequest;
 import jeremymorren.opentelemetry.models.Telemetry;
 import jeremymorren.opentelemetry.models.TelemetryItem;
 import jeremymorren.opentelemetry.models.TelemetryType;
@@ -51,16 +58,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ItemEvent;
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.List;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 @SuppressWarnings({"NotNullFieldNotInitialized", "unused"})
@@ -113,6 +122,9 @@ public class OpenTelemetryToolWindow {
     private ColorBox messageColorBox;
     private JCheckBox messageCheckBox;
     private JLabel messageCounter;
+    private ColorBox eventColorBox;
+    private JCheckBox eventCheckBox;
+    private JLabel eventCounter;
     private JComponent exceptionPanel;
 
     @NotNull
@@ -186,23 +198,19 @@ public class OpenTelemetryToolWindow {
         logsTable.getColumnModel().getColumn(2).setMaxWidth(130);
         logsTable.getTableHeader().setUI(null);
 
-        filter.setExtensions(new ClearTextFieldExtension(filter));
+        filter.setExtensions(ExtendableTextComponent.Extension.create(
+                AllIcons.Actions.Close, AllIcons.Actions.CloseHovered, "Clear", () -> filter.setText("")));
 
-        filter.addKeyListener(new KeyListener() {
+        // Listening to the document rather than to key events catches every way the text can change:
+        // typing, cut/paste (including from the context menu), undo, and the clear extension above.
+        filter.getDocument().addDocumentListener(new DocumentAdapter() {
             @Override
-            public void keyTyped(KeyEvent e) {
-            }
-
-            @Override
-            public void keyPressed(KeyEvent e) {
-                OpenTelemetryToolWindow.this.openTelemetrySession.updateFilter(filter.getText());
-            }
-
-            @Override
-            public void keyReleased(KeyEvent e) {
-                OpenTelemetryToolWindow.this.openTelemetrySession.updateFilter(filter.getText());
+            protected void textChanged(@NotNull DocumentEvent e) {
+                openTelemetrySession.updateFilter(filter.getText());
             }
         });
+
+        installTelemetryContextMenu();
 
         logsTable.getSelectionModel().addListSelectionListener(e -> {
             // Ignore intermediate events while selection is still changing.
@@ -211,6 +219,117 @@ public class OpenTelemetryToolWindow {
             }
             selectTelemetry(telemetryTableModel.getRow(logsTable.getSelectedRow()));
         });
+    }
+
+    /**
+     * Adds the "copy as request" actions to the telemetry table. They are only shown for HTTP telemetry
+     * (requests and dependencies), the only telemetry a request can be reconstructed from.
+     */
+    private void installTelemetryContextMenu() {
+        DefaultActionGroup actions = new DefaultActionGroup();
+        actions.add(new CopyHttpRequestAction("CopyCurlBash.text", request -> request.toCurlBash(curlCompressed())));
+        actions.add(new CopyHttpRequestAction("CopyCurlCmd.text", request -> request.toCurlCmd(curlCompressed())));
+        actions.add(new CopyHttpRequestAction("CopyHttpRequest.text", HttpTelemetryRequest::toHttpRequest));
+        actions.add(new PopOutSqlAction());
+
+        logsTable.addMouseListener(new PopupHandler() {
+            @Override
+            public void invokePopup(Component component, int x, int y) {
+                // Right-clicking a row acts on that row, as everywhere else in the IDE.
+                int row = logsTable.rowAtPoint(new Point(x, y));
+                if (row >= 0) {
+                    logsTable.setRowSelectionInterval(row, row);
+                }
+                ActionManager.getInstance()
+                        .createActionPopupMenu(ActionPlaces.POPUP, actions)
+                        .getComponent()
+                        .show(component, x, y);
+            }
+        });
+    }
+
+    private static boolean curlCompressed() {
+        return AppSettingState.getInstance().appendCurlCompressed.getValue();
+    }
+
+    @Nullable
+    private Telemetry getSelectedTelemetry() {
+        TelemetryItem selected = telemetryTableModel.getRow(logsTable.getSelectedRow());
+        return selected == null ? null : selected.getTelemetry();
+    }
+
+    /**
+     * Opens the selected database dependency's SQL in a scratch file, with the connection details the
+     * span recorded written into a comment header.
+     */
+    private final class PopOutSqlAction extends AnAction {
+        private PopOutSqlAction() {
+            String message = OpenTelemetryBundle.message("PopOutSql.text");
+            getTemplatePresentation().setText(message);
+            getTemplatePresentation().setDescription(message);
+        }
+
+        @NotNull
+        @Override
+        public ActionUpdateThread getActionUpdateThread() {
+            return ActionUpdateThread.EDT;
+        }
+
+        @Override
+        public void update(@NotNull AnActionEvent event) {
+            Telemetry telemetry = getSelectedTelemetry();
+            event.getPresentation().setEnabledAndVisible(telemetry != null && telemetry.getSql() != null);
+        }
+
+        @Override
+        public void actionPerformed(@NotNull AnActionEvent event) {
+            Telemetry telemetry = getSelectedTelemetry();
+            if (telemetry == null || telemetry.getSql() == null) {
+                return;
+            }
+            SqlScratchFile.open(project, telemetry);
+        }
+    }
+
+    @Nullable
+    private HttpTelemetryRequest getSelectedHttpRequest() {
+        TelemetryItem selected = telemetryTableModel.getRow(logsTable.getSelectedRow());
+        if (selected == null) {
+            return null;
+        }
+        return HttpTelemetryRequest.from(selected.getTelemetry().getActivity());
+    }
+
+    private final class CopyHttpRequestAction extends AnAction {
+        @NotNull
+        private final Function<HttpTelemetryRequest, String> format;
+
+        private CopyHttpRequestAction(@NotNull String messageKey, @NotNull Function<HttpTelemetryRequest, String> format) {
+            this.format = format;
+            String message = OpenTelemetryBundle.message(messageKey);
+            getTemplatePresentation().setText(message);
+            getTemplatePresentation().setDescription(message);
+        }
+
+        @NotNull
+        @Override
+        public ActionUpdateThread getActionUpdateThread() {
+            return ActionUpdateThread.EDT;
+        }
+
+        @Override
+        public void update(@NotNull AnActionEvent event) {
+            event.getPresentation().setEnabledAndVisible(getSelectedHttpRequest() != null);
+        }
+
+        @Override
+        public void actionPerformed(@NotNull AnActionEvent event) {
+            HttpTelemetryRequest request = getSelectedHttpRequest();
+            if (request == null) {
+                return;
+            }
+            CopyPasteManager.getInstance().setContents(new StringSelection(format.apply(request)));
+        }
     }
 
     private void selectTelemetry(@Nullable TelemetryItem telemetry) {
@@ -284,10 +403,10 @@ public class OpenTelemetryToolWindow {
         var json = createEditor(uiProject, JsonLanguage.INSTANCE);
         var sql = createEditor(uiProject, Language.findLanguageByID("SQL"));
 
-        jsonPreviewDocument = json.getV1();
-        sqlPreviewDocument = sql.getV1();
-        jsonEditor = json.getV2();
-        sqlEditor = sql.getV2();
+        jsonPreviewDocument = json.getFirst();
+        sqlPreviewDocument = sql.getFirst();
+        jsonEditor = json.getSecond();
+        sqlEditor = sql.getSecond();
         jsonPanel = jsonEditor.getComponent();
         sqlPanel = sqlEditor.getComponent();
 
@@ -305,8 +424,9 @@ public class OpenTelemetryToolWindow {
         metricColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Metric", JBColor.gray));
         exceptionColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Exception", JBColor.red));
         messageColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Message", JBColor.orange));
-        dependencyColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Request", JBColor.blue));
-        requestColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Dependency", JBColor.green));
+        dependencyColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Dependency", JBColor.blue));
+        requestColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Request", JBColor.green));
+        eventColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Event", JBColor.magenta));
         activityColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Activity", JBColor.cyan));
     }
 
@@ -351,7 +471,7 @@ public class OpenTelemetryToolWindow {
     }
 
     @NotNull
-    private static Tuple2<Document, Editor> createEditor(Project project, Language language) {
+    private static Pair<Document, Editor> createEditor(Project project, Language language) {
         var document = new LanguageTextField.SimpleDocumentCreator().createDocument("", language, project);
         var editor = EditorFactory.getInstance().createViewer(document, project, EditorKind.MAIN_EDITOR);
         if (editor instanceof EditorEx) {
@@ -367,7 +487,7 @@ public class OpenTelemetryToolWindow {
         editor.getSettings().setUseSoftWraps(
                 PropertiesComponent.getInstance().getBoolean("jeremymorren.opentelemetry.useSoftWrap"));
 
-        return new Tuple2<>(document, editor);
+        return Pair.create(document, editor);
     }
 
     @NotNull
@@ -450,13 +570,14 @@ public class OpenTelemetryToolWindow {
         setTelemetryType(metricCounter, metricCheckBox, TelemetryType.Metric);
         setTelemetryType(exceptionCounter, exceptionCheckBox, TelemetryType.Exception);
         setTelemetryType(messageCounter, messageCheckBox, TelemetryType.Message);
+        setTelemetryType(eventCounter, eventCheckBox, TelemetryType.Event);
         setTelemetryType(dependencyCounter, dependencyCheckBox, TelemetryType.Dependency);
         setTelemetryType(requestCounter, requestCheckBox, TelemetryType.Request);
         setTelemetryType(activityCounter, activityCheckBox, TelemetryType.Activity);
 
-        telemetryTypesCounter.addAll(Arrays.asList(metricCounter, exceptionCounter, messageCounter, dependencyCounter, requestCounter, activityCounter));
+        telemetryTypesCounter.addAll(Arrays.asList(metricCounter, exceptionCounter, messageCounter, eventCounter, dependencyCounter, requestCounter, activityCounter));
 
-        for (JCheckBox checkBox: new JCheckBox[]{metricCheckBox, exceptionCheckBox, messageCheckBox, dependencyCheckBox, requestCheckBox, activityCheckBox})
+        for (JCheckBox checkBox: telemetryTypeCheckBoxes())
         {
             var type = (TelemetryType) checkBox.getClientProperty("TelemetryType");
             checkBox.setSelected(openTelemetrySession.isTelemetryVisible(type));
@@ -470,7 +591,7 @@ public class OpenTelemetryToolWindow {
             filter.setText(openTelemetrySession.getFilter());
         }
 
-        for (JCheckBox checkBox: new JCheckBox[]{metricCheckBox, exceptionCheckBox, messageCheckBox, dependencyCheckBox, requestCheckBox, activityCheckBox}) {
+        for (JCheckBox checkBox: telemetryTypeCheckBoxes()) {
             var type = (TelemetryType) checkBox.getClientProperty("TelemetryType");
             if (type == null) {
                 continue;
@@ -481,6 +602,13 @@ public class OpenTelemetryToolWindow {
                 checkBox.setSelected(selected);
             }
         }
+    }
+
+    @NotNull
+    private JCheckBox[] telemetryTypeCheckBoxes() {
+        return new JCheckBox[]{
+                metricCheckBox, exceptionCheckBox, messageCheckBox, eventCheckBox,
+                dependencyCheckBox, requestCheckBox, activityCheckBox};
     }
 
     private static void setTelemetryType(JComponent counter, JComponent checkBox, TelemetryType telemetryType)
@@ -709,7 +837,7 @@ public class OpenTelemetryToolWindow {
             }
             if (activity.getTags() != null) {
                 formattedInfo.add(createTitleLabel("Tags"), createConstraint(row++, 0));
-                for (Map.Entry<String, String> entry : activity.getTags().getPrimitiveValues().entrySet()) {
+                for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
                     var label = createFilterLabel(entry.getKey(), entry.getValue());
                     formattedInfo.add(label, createConstraint(row++, indent));
                 }
@@ -767,7 +895,7 @@ public class OpenTelemetryToolWindow {
                         formattedInfo.add(new JLabel("Histogram Sum: " + sum), createConstraint(row++, indent));
                     }
                     if (point.getTags() != null) {
-                        for (Map.Entry<String, String> entry : point.getTags().getPrimitiveValues().entrySet()) {
+                        for (Map.Entry<String, String> entry : point.getTags().getDisplayValues().entrySet()) {
                             var label = createFilterLabel(entry.getKey(), entry.getValue());
                             formattedInfo.add(label, createConstraint(row++, indent));
                         }
@@ -782,6 +910,10 @@ public class OpenTelemetryToolWindow {
         if (telemetry.getLog() != null) {
             var log = telemetry.getLog();
             formattedInfo.add(createTitleLabel(log.getType().toString()), createConstraint(row++, 0));
+            if (log.getCustomEventName() != null)
+            {
+                formattedInfo.add(createFilterLabel("Event", log.getCustomEventName()), createConstraint(row++, indent));
+            }
             if (log.getFormattedMessage() != null)
             {
                 formattedInfo.add(createFilterLabel("Message", log.getFormattedMessage()), createConstraint(row++, indent));
@@ -815,7 +947,7 @@ public class OpenTelemetryToolWindow {
             if (log.getAttributes() != null)
             {
                 formattedInfo.add(createTitleLabel("Attributes"), createConstraint(row++, 0));
-                for (Map.Entry<String, String> entry : log.getAttributes().getPrimitiveValues().entrySet()) {
+                for (Map.Entry<String, String> entry : log.getAttributes().getDisplayValues().entrySet()) {
                     var value = entry.getValue();
                     if (value == null) {
                         value = "";
@@ -865,16 +997,19 @@ public class OpenTelemetryToolWindow {
         }
         JLabel jLabel = new JLabel("<html>" + escapeHtml(label) + ": " + "<a href=''>" + escapeHtml(display) + "</a></html>");
         jLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        jLabel.addMouseListener(new ClickListener(e -> {
-            openTelemetrySession.updateFilter(value);
-            this.filter.setText(value);
+        String clicked = value;
+        jLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // Setting the text applies the filter through the document listener.
+                filter.setText(clicked);
 
-            // If the label was right-clicked, copy the value to the clipboard
-            if (SwingUtilities.isRightMouseButton(e)) {
-                var clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-                clipboard.setContents(new StringSelection(value), null);
+                // If the label was right-clicked, copy the value to the clipboard
+                if (SwingUtilities.isRightMouseButton(e)) {
+                    CopyPasteManager.getInstance().setContents(new StringSelection(clicked));
+                }
             }
-        }));
+        });
         return jLabel;
     }
 
@@ -915,7 +1050,7 @@ public class OpenTelemetryToolWindow {
         if (s == null) {
             return "";
         }
-        return org.apache.commons.text.StringEscapeUtils.escapeHtml4(s);
+        return StringUtil.escapeXmlEntities(s);
     }
 
     /**

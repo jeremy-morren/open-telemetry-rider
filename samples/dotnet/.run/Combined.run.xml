@@ -1,0 +1,7 @@
+﻿<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Combined" type="CompoundRunConfigurationType">
+    <toRun name="OtelEcho.NoHeaders: http" type="LaunchSettings" />
+    <toRun name="OtelEcho.WithHeaders: http" type="LaunchSettings" />
+    <method v="2" />
+  </configuration>
+</component>
