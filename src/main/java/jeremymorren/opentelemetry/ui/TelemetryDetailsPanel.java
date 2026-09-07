@@ -6,6 +6,7 @@ import com.intellij.ui.InplaceButton;
 import com.intellij.ui.JBColor;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import jeremymorren.opentelemetry.ui.components.DetailsPanel;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -21,17 +22,17 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * Builds the Formatted tab: a summary header followed by collapsible sections of key/value rows.
+ * Builds the Formatted tab: a summary header, then collapsible sections of key/value rows which the
+ * container packs into columns when there is width for them.
  *
- * <p>Rows are laid out one per grid line rather than as a two column grid, and the key column is sized
- * to the widest key of the whole render, so keys line up across every section.
+ * <p>The key column is sized to the widest key of the whole render, so keys line up across sections.
  */
 public final class TelemetryDetailsPanel {
     private static final int MAX_KEY_WIDTH = 240;
-    private static final int SECTION_INDENT = 12;
+    private static final int ROW_INDENT = 12;
 
     @NotNull
-    private final JPanel container;
+    private final DetailsPanel container;
     @NotNull
     private final Consumer<String> onFilter;
 
@@ -41,26 +42,20 @@ public final class TelemetryDetailsPanel {
 
     private final List<JLabel> keyLabels = new ArrayList<>();
     private Section section;
-    private int row;
 
-    public TelemetryDetailsPanel(@NotNull JPanel container, @NotNull Consumer<String> onFilter) {
+    public TelemetryDetailsPanel(@NotNull DetailsPanel container, @NotNull Consumer<String> onFilter) {
         this.container = container;
         this.onFilter = onFilter;
     }
 
-    /**
-     * Starts a new render. Everything added afterwards replaces what was on screen.
-     */
+    /** Starts a render; everything added afterwards replaces what was on screen. */
     public void begin() {
         container.removeAll();
         keyLabels.clear();
         section = null;
-        row = 0;
     }
 
-    /**
-     * Finishes a render, sizing the key column to the widest key so the values line up.
-     */
+    /** Finishes a render, sizing the key column to the widest key so the values line up. */
     public void end() {
         int width = 0;
         for (JLabel key : keyLabels) {
@@ -73,18 +68,11 @@ public final class TelemetryDetailsPanel {
             key.setMinimumSize(size);
         }
 
-        GridBagConstraints filler = constraints(row);
-        filler.weighty = 1;
-        filler.fill = GridBagConstraints.BOTH;
-        container.add(new JPanel() {{ setOpaque(false); }}, filler);
-
         container.revalidate();
         container.repaint();
     }
 
-    /**
-     * The line at the top of the pane: what this telemetry is, in the terms of whatever it is.
-     */
+    /** The line at the top of the pane: what this telemetry is, in the terms of whatever it is. */
     public void header(@NotNull String title, @Nullable String subtitle, @Nullable Color titleColor) {
         JPanel header = new JPanel(new BorderLayout(JBUI.scale(8), 0));
         header.setOpaque(false);
@@ -104,21 +92,17 @@ public final class TelemetryDetailsPanel {
             header.add(subtitleLabel, BorderLayout.EAST);
         }
 
-        add(header);
+        section = null;
+        container.add(header, DetailsPanel.FULL_WIDTH);
     }
 
-    /**
-     * Opens a collapsible section. Rows added afterwards belong to it until the next section starts.
-     */
+    /** Opens a collapsible section. Rows added afterwards belong to it until the next section starts. */
     public void section(@NotNull String title) {
-        Section opened = new Section(title, !collapsed.contains(title));
-        section = opened;
-        add(opened.header);
+        section = new Section(title, !collapsed.contains(title));
+        container.add(section.block, DetailsPanel.SECTION);
     }
 
-    /**
-     * Adds a key/value row: dimmed key, selectable value, and copy/filter buttons on hover.
-     */
+    /** Adds a key/value row: dimmed key, selectable value, and copy/filter buttons on hover. */
     public void row(@Nullable String key, @Nullable String value) {
         if (value == null || value.isBlank()) {
             return;
@@ -127,7 +111,7 @@ public final class TelemetryDetailsPanel {
 
         JPanel rowPanel = new JPanel(new BorderLayout(JBUI.scale(8), 0));
         rowPanel.setOpaque(false);
-        rowPanel.setBorder(JBUI.Borders.empty(1, SECTION_INDENT, 1, 0));
+        rowPanel.setBorder(JBUI.Borders.empty(1, ROW_INDENT, 1, 0));
 
         JLabel keyLabel = new JLabel(key == null ? "" : key);
         keyLabel.setForeground(UIUtil.getContextHelpForeground());
@@ -144,20 +128,24 @@ public final class TelemetryDetailsPanel {
         add(rowPanel);
     }
 
-    /**
-     * Adds a component that spans the whole width, such as a timing bar.
-     */
+    /** Adds a component that spans the section's width, such as a timing bar. */
     public void component(@NotNull JComponent component) {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
-        wrapper.setBorder(JBUI.Borders.empty(2, SECTION_INDENT, 2, 0));
+        wrapper.setBorder(JBUI.Borders.empty(2, ROW_INDENT, 2, 0));
         wrapper.add(component, BorderLayout.CENTER);
         add(wrapper);
     }
 
-    /**
-     * A selectable, transparent, read only view of the value.
-     */
+    private void add(@NotNull JComponent component) {
+        if (section == null) {
+            container.add(component, DetailsPanel.FULL_WIDTH);
+            return;
+        }
+        section.add(component);
+    }
+
+    /** A selectable, transparent, read only view of the value. */
     @NotNull
     private static JComponent value(@NotNull String text) {
         JTextField field = new JTextField(text);
@@ -167,15 +155,12 @@ public final class TelemetryDetailsPanel {
         field.setForeground(UIUtil.getLabelForeground());
         field.setCaretPosition(0);
         field.setToolTipText(text);
-        // A long value must not widen the whole pane; the row stretches it to whatever width is going.
-        field.setPreferredSize(new Dimension(JBUI.scale(200), field.getPreferredSize().height));
+        // A long value must not widen the pane; the row stretches it to whatever width is going.
+        field.setPreferredSize(new Dimension(JBUI.scale(120), field.getPreferredSize().height));
         field.setMinimumSize(new Dimension(0, field.getPreferredSize().height));
         return field;
     }
 
-    /**
-     * Copy and filter buttons, revealed while the pointer is over the row.
-     */
     @NotNull
     private JComponent actions(@NotNull String value) {
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0));
@@ -189,9 +174,7 @@ public final class TelemetryDetailsPanel {
         return actions;
     }
 
-    /**
-     * Reveals the row's buttons while the pointer is anywhere over the row, buttons included.
-     */
+    /** Reveals the row's buttons while the pointer is anywhere over the row, buttons included. */
     private static void installHover(@NotNull JPanel rowPanel, @NotNull JComponent actions) {
         MouseAdapter hover = new MouseAdapter() {
             @Override
@@ -220,13 +203,6 @@ public final class TelemetryDetailsPanel {
         }
     }
 
-    private void add(@NotNull JComponent component) {
-        container.add(component, constraints(row++));
-        if (section != null) {
-            section.register(component);
-        }
-    }
-
     @NotNull
     private static GridBagConstraints constraints(int gridY) {
         GridBagConstraints c = new GridBagConstraints();
@@ -242,51 +218,54 @@ public final class TelemetryDetailsPanel {
     }
 
     /**
-     * A section header that shows and hides the rows added after it.
+     * A section: a header that shows and hides the rows stacked underneath it. The whole thing is one
+     * component, so the container can move it between columns as a unit.
      */
     private final class Section {
         private final String title;
-        private final JPanel header;
+        private final JPanel block = new JPanel(new GridBagLayout());
         private final List<JComponent> rows = new ArrayList<>();
+        private final JLabel label;
         private boolean expanded;
+        private int row;
 
         private Section(@NotNull String title, boolean expanded) {
             this.title = title;
             this.expanded = expanded;
 
-            JLabel label = new JLabel(title, icon(), SwingConstants.LEADING);
+            block.setOpaque(false);
+            block.setBorder(JBUI.Borders.emptyBottom(8));
+
+            label = new JLabel(title, icon(), SwingConstants.LEADING);
             label.setFont(label.getFont().deriveFont(Font.BOLD));
             label.setIconTextGap(JBUI.scale(4));
 
-            header = new JPanel(new BorderLayout(JBUI.scale(8), 0));
+            JPanel header = new JPanel(new BorderLayout(JBUI.scale(8), 0));
             header.setOpaque(false);
             header.setBorder(JBUI.Borders.empty(6, 0, 2, 0));
             header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             header.add(label, BorderLayout.WEST);
             header.add(separator(), BorderLayout.CENTER);
-            header.addMouseListener(new MouseAdapter() {
+
+            MouseAdapter toggle = new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
-                    toggle(label);
+                    toggle();
                 }
-            });
-            label.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseClicked(MouseEvent e) {
-                    toggle(label);
-                }
-            });
+            };
+            header.addMouseListener(toggle);
+            label.addMouseListener(toggle);
+
+            block.add(header, constraints(row++));
         }
 
-        private void register(@NotNull JComponent component) {
-            if (component == header) {
-                return;
-            }
+        private void add(@NotNull JComponent component) {
             rows.add(component);
             component.setVisible(expanded);
+            block.add(component, constraints(row++));
         }
 
-        private void toggle(@NotNull JLabel label) {
+        private void toggle() {
             expanded = !expanded;
             if (expanded) {
                 collapsed.remove(title);

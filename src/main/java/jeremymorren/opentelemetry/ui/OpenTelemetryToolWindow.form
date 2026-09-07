@@ -72,12 +72,10 @@
                     <properties/>
                     <border type="none"/>
                     <children>
-                      <grid id="8db4" binding="formattedInfo" layout-manager="GridBagLayout">
+                      <component id="8db4" class="jeremymorren.opentelemetry.ui.components.DetailsPanel" binding="formattedInfo" custom-create="true">
                         <constraints/>
                         <properties/>
-                        <border type="none"/>
-                        <children/>
-                      </grid>
+                      </component>
                     </children>
                   </scrollpane>
                 </children>

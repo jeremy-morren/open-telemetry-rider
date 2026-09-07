@@ -2,6 +2,7 @@ import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.BuildSearchableOptionsTask
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 
 // Get the plugin properties from the gradle.properties file
@@ -161,6 +162,15 @@ kover {
                 onCheck = true
             }
         }
+    }
+}
+
+// Grazie's cloud licence coroutines keep running when the headless IDE used to index searchable
+// options shuts down. The platform kills the process after its 10s grace period, so the task reports a
+// non-zero exit even though it wrote the index. Grazie contributes nothing to this plugin's options.
+tasks.withType<BuildSearchableOptionsTask>().configureEach {
+    jvmArgumentProviders += CommandLineArgumentProvider {
+        listOf("-Didea.suppressed.plugins.id=tanvd.grazi")
     }
 }
 

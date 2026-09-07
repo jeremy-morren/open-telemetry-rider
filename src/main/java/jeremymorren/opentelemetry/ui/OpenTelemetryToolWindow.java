@@ -77,7 +77,6 @@ import java.util.regex.Pattern;
 @SuppressWarnings({"NotNullFieldNotInitialized", "unused"})
 public class OpenTelemetryToolWindow {
     private static final Logger LOG = Logger.getInstance(OpenTelemetryToolWindow.class);
-    private static final String RESPONSE_HEADER_PREFIX = "http.response.header.";
 
     // UI Designer can call createUIComponents() before constructor assigns fields.
     @SuppressWarnings("ConstantValue")
@@ -101,7 +100,7 @@ public class OpenTelemetryToolWindow {
     private JComponent jsonPanel;
     private JComponent sqlPanel;
     private JTabbedPane tabbedPane;
-    private JPanel formattedInfo;
+    private DetailsPanel formattedInfo;
     private JScrollPane formattedInfoScrollPane;
 
     private JCheckBox activityCheckBox;
@@ -426,6 +425,8 @@ public class OpenTelemetryToolWindow {
         configureExceptionConsoleFilters(exceptionConsole, uiProject);
         applySoftWrapSettingToExceptionConsole();
         exceptionPanel = exceptionConsole.getComponent();
+
+        formattedInfo = new DetailsPanel();
 
         metricColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Metric", JBColor.gray));
         exceptionColorBox = new ColorBox(JBColor.namedColor("OpenTelemetry.TelemetryColor.Exception", JBColor.red));
@@ -867,27 +868,35 @@ public class OpenTelemetryToolWindow {
         return activity.getDisplayName() != null ? activity.getDisplayName() : activity.getTypeDisplay();
     }
 
+    /**
+     * Groups the request and response tags of an HTTP span. Tags keep the names the instrumentation
+     * gave them; understanding what a tag means is a reason to group it, not to rename it.
+     */
     private void describeHttp(@NotNull Activity activity) {
-        HttpTelemetryRequest request = HttpTelemetryRequest.from(activity);
-        if (request == null) {
+        if (HttpTelemetryRequest.from(activity) == null) {
             return;
         }
 
         details.section("Request");
-        details.row("Method", request.getMethod());
-        details.row("URL", request.getUrl());
-        details.row("Path", activity.getRequestPath());
-        for (kotlin.Pair<String, String> header : request.getHeaders()) {
-            details.row(header.getFirst(), header.getSecond());
-        }
+        tagRows(activity, "http.request.", "http.route", "url.", "server.", "client.", "network.",
+                "user_agent.");
 
         details.section("Response");
-        details.row("Status", activity.getResponseStatusCode());
-        details.row("Error", activity.getErrorDisplay());
-        if (activity.getTags() != null) {
-            for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
-                if (entry.getKey().startsWith(RESPONSE_HEADER_PREFIX)) {
-                    details.row(entry.getKey().substring(RESPONSE_HEADER_PREFIX.length()), entry.getValue());
+        tagRows(activity, "http.response.", "error.");
+    }
+
+    /**
+     * Adds a row per tag whose name starts with one of the prefixes, under its own name.
+     */
+    private void tagRows(@NotNull Activity activity, @NotNull String... prefixes) {
+        if (activity.getTags() == null) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
+            for (String prefix : prefixes) {
+                if (entry.getKey().startsWith(prefix)) {
+                    details.row(entry.getKey(), entry.getValue());
+                    break;
                 }
             }
         }
@@ -899,18 +908,7 @@ public class OpenTelemetryToolWindow {
         }
 
         details.section("Database");
-        if (activity.getTags() != null) {
-            for (Map.Entry<String, String> entry : activity.getTags().getDisplayValues().entrySet()) {
-                String key = entry.getKey();
-                if (key.equals("db.query.text") || key.equals("db.statement")) {
-                    continue;
-                }
-                if (key.startsWith("db.") || key.startsWith("server.") || key.startsWith("network.")) {
-                    details.row(key, entry.getValue());
-                }
-            }
-        }
-        details.row("Query", activity.getDbQuery());
+        tagRows(activity, "db.", "server.", "network.");
     }
 
     /**
