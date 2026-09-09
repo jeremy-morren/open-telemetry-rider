@@ -41,7 +41,7 @@ class OtlpHttpReceiverService : Disposable {
     @Volatile
     private var server: HttpServer? = null
 
-    /** Endpoint URI (e.g., "http://127.0.0.1:4318"); null until server starts */
+    /** Endpoint URI (e.g., "http://127.0.0.2:4318"); null until server starts */
     @Volatile
     private var endpoint: URI? = null
 
@@ -76,7 +76,7 @@ class OtlpHttpReceiverService : Disposable {
      *
      * Thread-safe via @Synchronized: Only one thread will create the server; others wait and get the result.
      *
-     * @return URI of the started server (e.g., "http://127.0.0.1:4318")
+     * @return URI of the started server (e.g., "http://127.0.0.2:4318")
      * @throws IllegalStateException if loopback OTLP receiver is disabled in settings
      *
      * Performance: O(1) after first call (checks cached endpoint variable)
@@ -93,8 +93,8 @@ class OtlpHttpReceiverService : Disposable {
 
         logger.info("Starting open telemetry loopback OTLP receiver...")
 
-        // Create HTTP server bound to loopback interface (127.0.0.1) on any available port
-        val httpServer = HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0)
+        // Bound to a loopback address on any available port, so the receiver is unreachable off this machine
+        val (host, httpServer) = createServer()
         
         // Register one root context so scoped endpoints like /<scope>/v1/traces are supported.
         httpServer.createContext("/") { exchange -> handle(exchange) }
@@ -110,10 +110,31 @@ class OtlpHttpReceiverService : Disposable {
 
         // Cache server instance and endpoint URI for future calls
         server = httpServer
-        endpoint = URI("http://127.0.0.1:${httpServer.address.port}")
+        endpoint = URI("http://$host:${httpServer.address.port}")
         logger.info("Loopback OTLP receiver listening on $endpoint")
         return endpoint!!
     }
+
+    /**
+     * Binds the server to [BIND_ADDRESS].
+     *
+     * The whole of 127.0.0.0/8 is loopback on Windows and Linux, but macOS assigns only 127.0.0.1 to
+     * its loopback interface, so binding anywhere else there fails. Falling back keeps the receiver
+     * working rather than failing the launch it was patched into.
+     */
+    private fun createServer(): Pair<String, HttpServer> {
+        try {
+            return BIND_ADDRESS to HttpServer.create(socketAddress(BIND_ADDRESS), 0)
+        } catch (ex: IOException) {
+            if (BIND_ADDRESS == FALLBACK_BIND_ADDRESS) {
+                throw ex
+            }
+            logger.warn("Could not bind the OTLP receiver to $BIND_ADDRESS; falling back to $FALLBACK_BIND_ADDRESS", ex)
+        }
+        return FALLBACK_BIND_ADDRESS to HttpServer.create(socketAddress(FALLBACK_BIND_ADDRESS), 0)
+    }
+
+    private fun socketAddress(host: String) = InetSocketAddress(InetAddress.getByName(host), 0)
 
     /**
      * Handles incoming HTTP requests to the OTLP endpoints.
@@ -245,6 +266,12 @@ class OtlpHttpReceiverService : Disposable {
 
     /** Companion object providing static access to the singleton instance. */
     companion object {
+        /** Loopback address the receiver listens on. */
+        const val BIND_ADDRESS: String = "127.0.0.2"
+
+        /** The one loopback address every platform is guaranteed to have. */
+        private const val FALLBACK_BIND_ADDRESS: String = "127.0.0.1"
+
         @JvmStatic
         fun getInstance(): OtlpHttpReceiverService =
             ApplicationManager.getApplication().getService(OtlpHttpReceiverService::class.java)

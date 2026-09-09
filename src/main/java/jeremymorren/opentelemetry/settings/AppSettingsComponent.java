@@ -10,6 +10,7 @@ import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import jeremymorren.opentelemetry.otlp.OtlpEnvironmentVariables;
+import jeremymorren.opentelemetry.otlp.OtlpHttpReceiverService;
 
 import javax.swing.*;
 import java.awt.Font;
@@ -29,7 +30,7 @@ public class AppSettingsComponent {
     private static final int ENVIRONMENT_COLUMNS = 52;
 
     private final JPanel panel;
-    private final JBCheckBox enableLoopbackOtlpReceiver = new JBCheckBox("Enable loopback OTLP/HTTP receiver (binds to 127.0.0.1 only)");
+    private final JBCheckBox enableLoopbackOtlpReceiver = new JBCheckBox("Enable loopback OTLP/HTTP receiver (binds to " + OtlpHttpReceiverService.BIND_ADDRESS + " only)");
     private final JBCheckBox injectOtlpEnvironmentVariables = new JBCheckBox("Inject OTLP environment variables into launched processes");
     private final JBCheckBox appendCurlCompressed = new JBCheckBox("Append --compressed to copied curl commands");
     private final JBIntSpinner flushIntervalMillis = new JBIntSpinner(

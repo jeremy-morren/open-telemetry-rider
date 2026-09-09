@@ -16,12 +16,6 @@
         <projectService serviceImplementation="jeremymorren.opentelemetry.settings.ProjectSettingsState"/>
         <applicationService serviceImplementation="jeremymorren.opentelemetry.settings.AppSettingState"/>
         <applicationService serviceImplementation="jeremymorren.opentelemetry.otlp.OtlpHttpReceiverService"/>
-        <projectConfigurable
-                parentId="tools"
-                instance="jeremymorren.opentelemetry.settings.ProjectSettingsConfigurable"
-                id="jeremymorren.opentelemetry.settings.ProjectSettingsConfigurable"
-                displayName="OpenTelemetry: Settings"
-                nonDefaultProject="true"/>
         <applicationConfigurable
             parentId="tools"
             instance="jeremymorren.opentelemetry.settings.AppSettingsConfigurable"

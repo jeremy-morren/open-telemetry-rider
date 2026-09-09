@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  * <p>The OTLP receiver is a single application service shared by every open IDE window, so telemetry
  * has to be routed back to the exact debug session that produced it. Each launch is given an opaque
  * scope id which is embedded in the endpoint handed to the process
- * ({@code http://127.0.0.1:<port>/<scope>}), and the debug session claims the scope its launch was
+ * ({@code http://127.0.0.2:<port>/<scope>}), and the debug session claims the scope its launch was
  * patched with. A session therefore only ever sees its own telemetry, even when several projects of
  * the same solution are debugged simultaneously.
  */

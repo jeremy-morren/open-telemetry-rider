@@ -92,10 +92,6 @@ public class OpenTelemetrySession {
             this.updateFilteredTelemetries();
             return Unit.INSTANCE;
         });
-        projectSettingsState.caseInsensitiveFiltering.advise(lifetime, (v) -> {
-            this.updateFilteredTelemetries();
-            return Unit.INSTANCE;
-        });
     }
 
     public void startListeningToOtlpReceiver() {

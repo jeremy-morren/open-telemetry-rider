@@ -21,6 +21,15 @@
   copied curl commands end with `--compressed`.
 - Tidied the global settings page: it is no longer forced ridiculously wide by its own labels, and the
   environment variables are edited in JetBrains Mono rather than the Swing default of Courier.
+- The loopback OTLP receiver now listens on `127.0.0.2` rather than `127.0.0.1`, keeping it clear of
+  whatever the debugged application binds. It falls back to `127.0.0.1` on platforms that assign only
+  that one address to the loopback interface, such as macOS.
+- Moved the Raw tab last, after Formatted, SQL and Exception, and reformatted the JSON it shows: an
+  object wrapping a single scalar now stays on one line, and array elements each get a line of their
+  own, instead of protobuf's much taller layout.
+- Case insensitive search is now a toggle in the options menu next to the sort modes. It used to be
+  duplicated as a per-project setting with a settings page of its own, which the filter never actually
+  read; that page is gone, and the options menu now opens the settings that remain.
 - Reworked the Formatted tab: a summary header, collapsible sections, aligned keys, selectable values
   with copy/filter buttons on hover, and a timing breakdown bar for database dependencies. Sections are
   laid out in columns when the pane is wide enough for them. Rows are one line tall rather than the

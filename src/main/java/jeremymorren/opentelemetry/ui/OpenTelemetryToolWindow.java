@@ -78,6 +78,12 @@ import java.util.regex.Pattern;
 public class OpenTelemetryToolWindow {
     private static final Logger LOG = Logger.getInstance(OpenTelemetryToolWindow.class);
 
+    // Tabs of the details pane, in the order the form declares them. Raw JSON sits last: it is the
+    // fallback for when the tabs that interpret the telemetry have nothing to show.
+    private static final int FORMATTED_TAB = 0;
+    private static final int SQL_TAB = 1;
+    private static final int EXCEPTION_TAB = 2;
+
     // UI Designer can call createUIComponents() before constructor assigns fields.
     @SuppressWarnings("ConstantValue")
     private Project getUiProjectOrDefault() {
@@ -454,8 +460,8 @@ public class OpenTelemetryToolWindow {
         applySoftWrapSettingToExceptionConsole();
         exceptionPanel = exceptionConsole.getComponent();
 
-        if (tabbedPane != null && tabbedPane.getTabCount() > 3) {
-            tabbedPane.setComponentAt(3, exceptionPanel);
+        if (tabbedPane != null && tabbedPane.getTabCount() > EXCEPTION_TAB) {
+            tabbedPane.setComponentAt(EXCEPTION_TAB, exceptionPanel);
         }
     }
 
@@ -509,8 +515,7 @@ public class OpenTelemetryToolWindow {
 
         actionGroup.add(new AutoScrollToTheEndToolbarAction(this::acceptScrollToEnd, autoScrollToTheEnd));
 
-        actionGroup.add(new ToggleCaseInsensitiveSearchToolbarAction());
-
+        // Case insensitive search lives in the options menu, alongside the sort modes it belongs with.
         actionGroup.add(new ToggleUseSoftWrapsToolbarAction(this::getPrimaryEditor, this::applySoftWrapSettingToExceptionConsole));
 
         actionGroup.add(new ClearApplicationInsightsLogToolbarAction() {
@@ -634,12 +639,12 @@ public class OpenTelemetryToolWindow {
     private void updateSqlPreview(@Nullable String sql) {
         if (sql == null) {
             //No SQL for this telemetry. Disable the SQL tab and select the first tab
-            tabbedPane.setEnabledAt(2, false);
-            if (tabbedPane.getSelectedIndex() == 2)
-                tabbedPane.setSelectedIndex(0);
+            tabbedPane.setEnabledAt(SQL_TAB, false);
+            if (tabbedPane.getSelectedIndex() == SQL_TAB)
+                tabbedPane.setSelectedIndex(FORMATTED_TAB);
             return;
         }
-        tabbedPane.setEnabledAt(2, true);
+        tabbedPane.setEnabledAt(SQL_TAB, true);
         var finalSql = sql.replace("\r", "");
         ApplicationManager.getApplication().runWriteAction(() -> sqlPreviewDocument.setText(finalSql));
         updateFoldRegions(sqlEditor);
@@ -648,13 +653,13 @@ public class OpenTelemetryToolWindow {
     private void updateExceptionView(@Nullable Telemetry telemetry) {
         if (telemetry == null || telemetry.getException() == null) {
             //No exception for this telemetry. Disable the exception tab and select the first tab
-            tabbedPane.setEnabledAt(3, false);
-            if (tabbedPane.getSelectedIndex() == 3)
-                tabbedPane.setSelectedIndex(0);
+            tabbedPane.setEnabledAt(EXCEPTION_TAB, false);
+            if (tabbedPane.getSelectedIndex() == EXCEPTION_TAB)
+                tabbedPane.setSelectedIndex(FORMATTED_TAB);
             exceptionConsole.clear();
             return;
         }
-        tabbedPane.setEnabledAt(3, true);
+        tabbedPane.setEnabledAt(EXCEPTION_TAB, true);
         var exception = normalizeExceptionForConsole(telemetry.getException());
         exceptionConsole.clear();
         exceptionConsole.print(exception + "\n", ConsoleViewContentType.NORMAL_OUTPUT);

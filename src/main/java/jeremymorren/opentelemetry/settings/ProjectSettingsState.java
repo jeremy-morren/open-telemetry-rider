@@ -7,12 +7,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SimpleModificationTracker;
 import com.intellij.util.xmlb.XmlSerializerUtil;
 import com.intellij.util.xmlb.annotations.MapAnnotation;
-import com.intellij.util.xmlb.annotations.OptionTag;
-import com.jetbrains.rd.util.lifetime.LifetimeDefinition;
-import com.jetbrains.rd.util.reactive.Property;
 import jeremymorren.opentelemetry.models.TelemetryType;
-import jeremymorren.opentelemetry.settings.converters.BooleanPropertyConverter;
-import kotlin.Unit;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,9 +26,6 @@ import java.util.stream.Collectors;
 public class ProjectSettingsState implements PersistentStateComponentWithModificationTracker<ProjectSettingsState> {
     private final SimpleModificationTracker tracker = new SimpleModificationTracker();
 
-    @OptionTag(converter = BooleanPropertyConverter.class)
-    public final Property<Boolean> caseInsensitiveFiltering = new Property<>(false);
-
     /**
      * Telemetry types hidden per run configuration, as a comma separated list of {@link TelemetryType}
      * names. Keyed by configuration rather than held once per project, so that hiding metrics while
@@ -43,10 +35,6 @@ public class ProjectSettingsState implements PersistentStateComponentWithModific
     @MapAnnotation(surroundWithTag = false, keyAttributeName = "configuration", valueAttributeName = "hidden",
             entryTagName = "hiddenTelemetryTypes")
     public Map<String, String> hiddenTelemetryTypes = new LinkedHashMap<>();
-
-    public ProjectSettingsState() {
-        registerAllPropertyToIncrementTrackerOnChanges(this);
-    }
 
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);
@@ -61,18 +49,6 @@ public class ProjectSettingsState implements PersistentStateComponentWithModific
     @Override
     public void loadState(@NotNull ProjectSettingsState state) {
         XmlSerializerUtil.copyBean(state, this);
-        registerAllPropertyToIncrementTrackerOnChanges(state);
-    }
-
-    private void registerAllPropertyToIncrementTrackerOnChanges(@NotNull ProjectSettingsState state) {
-        incrementTrackerWhenPropertyChanges(state.caseInsensitiveFiltering);
-    }
-
-    private <T> void incrementTrackerWhenPropertyChanges(Property<T> property) {
-        property.advise(new LifetimeDefinition(), v -> {
-            this.tracker.incModificationCount();
-            return Unit.INSTANCE;
-        });
     }
 
     @Override

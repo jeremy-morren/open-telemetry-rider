@@ -34,6 +34,8 @@ public class OptionsToolbarAction extends AnAction {
         actionGroup.add(new ChangeFilterModeToolbarAction(FilterTelemetryMode.Duration));
         actionGroup.add(new ChangeFilterModeToolbarAction(FilterTelemetryMode.Timestamp));
         actionGroup.add(new Separator());
+        actionGroup.add(new ToggleCaseInsensitiveSearchToolbarAction());
+        actionGroup.add(new Separator());
         actionGroup.add(new OpenSettingsToolbarAction());
 
         ActionManager.getInstance().createActionPopupMenu("AIDLV_OpenSettingsMenu", actionGroup)

@@ -3,6 +3,7 @@
 package jeremymorren.opentelemetry.otlp
 
 import com.google.protobuf.ByteString
+import com.google.protobuf.MessageOrBuilder
 import com.google.protobuf.util.JsonFormat
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest
@@ -17,6 +18,7 @@ import io.opentelemetry.proto.metrics.v1.Metric
 import io.opentelemetry.proto.trace.v1.Span
 import io.opentelemetry.proto.trace.v1.Status
 import jeremymorren.opentelemetry.models.*
+import jeremymorren.opentelemetry.util.RawJsonFormatter
 import kotlinx.serialization.json.*
 import java.time.Duration
 import java.time.Instant
@@ -26,7 +28,11 @@ import java.util.HexFormat
 class OtlpTelemetryDecoder(
     private val telemetryFactory: TelemetryFactory = TelemetryFactory(),
 ) {
-    private val jsonPrinter: JsonFormat.Printer = JsonFormat.printer().alwaysPrintFieldsWithNoPresence()
+    private val jsonPrinter: JsonFormat.Printer =
+        JsonFormat.printer().alwaysPrintFieldsWithNoPresence().omittingInsignificantWhitespace()
+
+    /** The message as the Raw tab shows it. */
+    private fun rawJson(message: MessageOrBuilder): String = RawJsonFormatter.format(jsonPrinter.print(message))
 
     private val messageTemplateRegex = Regex("""\{[@$]?([^}:@]+?)(?::[^}]*)?}""")
 
@@ -38,7 +44,7 @@ class OtlpTelemetryDecoder(
                 for (scopeSpan in resourceSpan.scopeSpansList) {
                     for (span in scopeSpan.spansList) {
                         val telemetry = toTraceTelemetry(span, resource, scopeSpan.scope)
-                        add(telemetryFactory.createFromTelemetry(telemetry, jsonPrinter.print(span)))
+                        add(telemetryFactory.createFromTelemetry(telemetry, rawJson(span)))
                     }
                 }
             }
@@ -53,7 +59,7 @@ class OtlpTelemetryDecoder(
                 for (scopeLog in resourceLog.scopeLogsList) {
                     for (logRecord in scopeLog.logRecordsList) {
                         val telemetry = toLogTelemetry(logRecord, resource, scopeLog.scope)
-                        add(telemetryFactory.createFromTelemetry(telemetry, jsonPrinter.print(logRecord)))
+                        add(telemetryFactory.createFromTelemetry(telemetry, rawJson(logRecord)))
                     }
                 }
             }
@@ -68,7 +74,7 @@ class OtlpTelemetryDecoder(
                 for (scopeMetric in resourceMetric.scopeMetricsList) {
                     for (metric in scopeMetric.metricsList) {
                         val telemetry = toMetricTelemetry(metric, resource, scopeMetric.scope)
-                        add(telemetryFactory.createFromTelemetry(telemetry, jsonPrinter.print(metric)))
+                        add(telemetryFactory.createFromTelemetry(telemetry, rawJson(metric)))
                     }
                 }
             }

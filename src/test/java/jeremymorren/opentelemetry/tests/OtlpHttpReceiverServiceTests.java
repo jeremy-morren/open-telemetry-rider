@@ -4,6 +4,7 @@ import com.google.protobuf.ByteString;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpPrincipal;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
@@ -48,6 +49,31 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 public class OtlpHttpReceiverServiceTests {
+    @Test
+    public void bindsToTheLoopbackAddressItAdvertises() throws Exception {
+        OtlpHttpReceiverService service = new OtlpHttpReceiverService();
+
+        Method createServer = OtlpHttpReceiverService.class.getDeclaredMethod("createServer");
+        createServer.setAccessible(true);
+        kotlin.Pair<?, ?> bound = (kotlin.Pair<?, ?>) createServer.invoke(service);
+        HttpServer server = (HttpServer) bound.getSecond();
+
+        try {
+            // The endpoint handed to the debugged process is built from the first half of the pair, so
+            // it has to name the address the server is really on - fallback included.
+            java.net.InetAddress address = server.getAddress().getAddress();
+            assert bound.getFirst().equals(address.getHostAddress());
+            assert address.isLoopbackAddress();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void listensOnASecondLoopbackAddressSoItIsOutOfTheWayOfTheDebuggedApp() {
+        assert "127.0.0.2".equals(OtlpHttpReceiverService.BIND_ADDRESS);
+    }
+
     @Test
     public void telemetryIsNotBufferedForListenersRegisteredLater() throws Exception {
         OtlpHttpReceiverService service = new OtlpHttpReceiverService();
