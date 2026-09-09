@@ -3,6 +3,7 @@ package jeremymorren.opentelemetry.tests;
 import com.google.protobuf.ByteString;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
+import com.intellij.openapi.util.SystemInfo;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpPrincipal;
@@ -39,6 +40,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -50,28 +52,22 @@ import java.util.function.Consumer;
 
 public class OtlpHttpReceiverServiceTests {
     @Test
-    public void bindsToTheLoopbackAddressItAdvertises() throws Exception {
-        OtlpHttpReceiverService service = new OtlpHttpReceiverService();
-
-        Method createServer = OtlpHttpReceiverService.class.getDeclaredMethod("createServer");
-        createServer.setAccessible(true);
-        kotlin.Pair<?, ?> bound = (kotlin.Pair<?, ?>) createServer.invoke(service);
-        HttpServer server = (HttpServer) bound.getSecond();
+    public void theAddressItListensOnCanBeBoundOnThisPlatform() throws Exception {
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(InetAddress.getByName(OtlpHttpReceiverService.BIND_ADDRESS), 0), 0);
 
         try {
-            // The endpoint handed to the debugged process is built from the first half of the pair, so
-            // it has to name the address the server is really on - fallback included.
-            java.net.InetAddress address = server.getAddress().getAddress();
-            assert bound.getFirst().equals(address.getHostAddress());
-            assert address.isLoopbackAddress();
+            assert server.getAddress().getAddress().isLoopbackAddress();
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    public void listensOnASecondLoopbackAddressSoItIsOutOfTheWayOfTheDebuggedApp() {
-        assert "127.0.0.2".equals(OtlpHttpReceiverService.BIND_ADDRESS);
+    public void listensOnASecondLoopbackAddressEverywhereMacOsAllowsOnlyOne() {
+        String expected = SystemInfo.isMac ? "127.0.0.1" : "127.0.0.2";
+
+        assert expected.equals(OtlpHttpReceiverService.BIND_ADDRESS);
     }
 
     @Test

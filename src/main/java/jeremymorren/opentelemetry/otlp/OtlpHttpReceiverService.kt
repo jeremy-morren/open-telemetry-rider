@@ -3,6 +3,7 @@ package jeremymorren.opentelemetry.otlp
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.util.SystemInfo
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import jeremymorren.opentelemetry.models.TelemetryItem
@@ -94,7 +95,7 @@ class OtlpHttpReceiverService : Disposable {
         logger.info("Starting open telemetry loopback OTLP receiver...")
 
         // Bound to a loopback address on any available port, so the receiver is unreachable off this machine
-        val (host, httpServer) = createServer()
+        val httpServer = HttpServer.create(InetSocketAddress(InetAddress.getByName(BIND_ADDRESS), 0), 0)
         
         // Register one root context so scoped endpoints like /<scope>/v1/traces are supported.
         httpServer.createContext("/") { exchange -> handle(exchange) }
@@ -110,31 +111,10 @@ class OtlpHttpReceiverService : Disposable {
 
         // Cache server instance and endpoint URI for future calls
         server = httpServer
-        endpoint = URI("http://$host:${httpServer.address.port}")
+        endpoint = URI("http://$BIND_ADDRESS:${httpServer.address.port}")
         logger.info("Loopback OTLP receiver listening on $endpoint")
         return endpoint!!
     }
-
-    /**
-     * Binds the server to [BIND_ADDRESS].
-     *
-     * The whole of 127.0.0.0/8 is loopback on Windows and Linux, but macOS assigns only 127.0.0.1 to
-     * its loopback interface, so binding anywhere else there fails. Falling back keeps the receiver
-     * working rather than failing the launch it was patched into.
-     */
-    private fun createServer(): Pair<String, HttpServer> {
-        try {
-            return BIND_ADDRESS to HttpServer.create(socketAddress(BIND_ADDRESS), 0)
-        } catch (ex: IOException) {
-            if (BIND_ADDRESS == FALLBACK_BIND_ADDRESS) {
-                throw ex
-            }
-            logger.warn("Could not bind the OTLP receiver to $BIND_ADDRESS; falling back to $FALLBACK_BIND_ADDRESS", ex)
-        }
-        return FALLBACK_BIND_ADDRESS to HttpServer.create(socketAddress(FALLBACK_BIND_ADDRESS), 0)
-    }
-
-    private fun socketAddress(host: String) = InetSocketAddress(InetAddress.getByName(host), 0)
 
     /**
      * Handles incoming HTTP requests to the OTLP endpoints.
@@ -266,11 +246,13 @@ class OtlpHttpReceiverService : Disposable {
 
     /** Companion object providing static access to the singleton instance. */
     companion object {
-        /** Loopback address the receiver listens on. */
-        const val BIND_ADDRESS: String = "127.0.0.2"
-
-        /** The one loopback address every platform is guaranteed to have. */
-        private const val FALLBACK_BIND_ADDRESS: String = "127.0.0.1"
+        /**
+         * Loopback address the receiver listens on. Windows and Linux route the whole of 127.0.0.0/8 to
+         * the loopback interface, so a second address there keeps the receiver clear of anything the
+         * debugged application binds; macOS assigns only 127.0.0.1 to lo0, so that is all it can use.
+         */
+        @JvmField
+        val BIND_ADDRESS: String = if (SystemInfo.isMac) "127.0.0.1" else "127.0.0.2"
 
         @JvmStatic
         fun getInstance(): OtlpHttpReceiverService =

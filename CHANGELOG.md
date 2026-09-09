@@ -22,8 +22,8 @@
 - Tidied the global settings page: it is no longer forced ridiculously wide by its own labels, and the
   environment variables are edited in JetBrains Mono rather than the Swing default of Courier.
 - The loopback OTLP receiver now listens on `127.0.0.2` rather than `127.0.0.1`, keeping it clear of
-  whatever the debugged application binds. It falls back to `127.0.0.1` on platforms that assign only
-  that one address to the loopback interface, such as macOS.
+  whatever the debugged application binds. macOS assigns only `127.0.0.1` to its loopback interface,
+  so the receiver stays there on that platform.
 - Moved the Raw tab last, after Formatted, SQL and Exception, and reformatted the JSON it shows: an
   object wrapping a single scalar now stays on one line, and array elements each get a line of their
   own, instead of protobuf's much taller layout.
