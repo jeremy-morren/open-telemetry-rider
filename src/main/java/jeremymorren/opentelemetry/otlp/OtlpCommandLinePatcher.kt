@@ -15,6 +15,7 @@ object OtlpCommandLinePatcher {
             settings.otlpEnvironmentVariables,
             endpoint,
             settings.otlpFlushIntervalMillis,
+            settings.otlpMetricsFlushIntervalSeconds,
         )
         commandLine.withEnvironment(resolved)
     }

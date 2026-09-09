@@ -39,6 +39,10 @@ public class AppSettingState implements PersistentStateComponentWithModification
      * Value of the {@code ${OTLP_FLUSH_INTERVAL}} placeholder, in milliseconds.
      */
     public int otlpFlushIntervalMillis = OtlpEnvironmentVariables.DEFAULT_FLUSH_INTERVAL_MILLIS;
+    /**
+     * Value of the {@code ${OTLP_METRICS_FLUSH_INTERVAL}} placeholder, in seconds.
+     */
+    public int otlpMetricsFlushIntervalSeconds = OtlpEnvironmentVariables.DEFAULT_METRICS_FLUSH_INTERVAL_SECONDS;
 
     public AppSettingState() {
         registerAllPropertyToIncrementTrackerOnChanges(this);

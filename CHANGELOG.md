@@ -16,11 +16,15 @@
   comment header.
 - Captured HTTP headers (`http.request.header.*`) are now listed under Tags; array valued tags used to
   be skipped entirely.
-- Added a flush frequency setting, and a setting for whether copied curl commands end with
-  `--compressed`.
+- Added a flush interval setting, a separate metrics flush interval (seconds, default 60, available to
+  the environment variable template as `${OTLP_METRICS_FLUSH_INTERVAL}`), and a setting for whether
+  copied curl commands end with `--compressed`.
+- Tidied the global settings page: it is no longer forced ridiculously wide by its own labels, and the
+  environment variables are edited in JetBrains Mono rather than the Swing default of Courier.
 - Reworked the Formatted tab: a summary header, collapsible sections, aligned keys, selectable values
   with copy/filter buttons on hover, and a timing breakdown bar for database dependencies. Sections are
-  laid out in columns when the pane is wide enough for them.
+  laid out in columns when the pane is wide enough for them. Rows are one line tall rather than the
+  height of a form control, so a lot more fits on screen.
 - Telemetry type filters are now remembered per run configuration, so hiding metrics for one service
   does not hide them for another.
 - Fixed the search box not filtering while typing. Searching now also matches the row text as shown,

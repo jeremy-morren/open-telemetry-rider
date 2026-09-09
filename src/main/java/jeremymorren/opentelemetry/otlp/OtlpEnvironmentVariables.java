@@ -14,13 +14,19 @@ public final class OtlpEnvironmentVariables {
      */
     public static final int DEFAULT_FLUSH_INTERVAL_MILLIS = 100;
 
+    /**
+     * How often a debugged process pushes metrics, in seconds. Metrics are cumulative rather than
+     * per-event, so pushing them as often as traces and logs is pure noise; this is OpenTelemetry's own
+     * default interval.
+     */
+    public static final int DEFAULT_METRICS_FLUSH_INTERVAL_SECONDS = 60;
+
     public static final String DEFAULT_ENVIRONMENT_VARIABLES = String.join("\n",
             "OTEL_EXPORTER_OTLP_ENDPOINT=${OTLP_ENDPOINT}",
             "OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
             "OTEL_BSP_SCHEDULE_DELAY=${OTLP_FLUSH_INTERVAL}",
             "OTEL_BLRP_SCHEDULE_DELAY=${OTLP_FLUSH_INTERVAL}",
-            "# Metrics are exported every 60s by default. Uncomment to flush them as often as the rest:",
-            "# OTEL_METRIC_EXPORT_INTERVAL=${OTLP_FLUSH_INTERVAL}"
+            "OTEL_METRIC_EXPORT_INTERVAL=${OTLP_METRICS_FLUSH_INTERVAL}"
     );
 
     private OtlpEnvironmentVariables() {
@@ -30,7 +36,8 @@ public final class OtlpEnvironmentVariables {
     public static Map<String, String> resolve(
             @NotNull String template,
             @NotNull URI endpoint,
-            int flushIntervalMillis
+            int flushIntervalMillis,
+            int metricsFlushIntervalSeconds
     ) {
         LinkedHashMap<String, String> result = new LinkedHashMap<>();
 
@@ -38,7 +45,10 @@ public final class OtlpEnvironmentVariables {
                 "${OTLP_ENDPOINT}", endpoint.toString(),
                 "${OTLP_HOST}", endpoint.getHost(),
                 "${OTLP_PORT}", Integer.toString(endpoint.getPort()),
-                "${OTLP_FLUSH_INTERVAL}", Integer.toString(flushIntervalMillis)
+                "${OTLP_FLUSH_INTERVAL}", Integer.toString(flushIntervalMillis),
+                // Configured in seconds, but OTEL_METRIC_EXPORT_INTERVAL - like every other OpenTelemetry
+                // interval - is read in milliseconds.
+                "${OTLP_METRICS_FLUSH_INTERVAL}", Integer.toString(metricsFlushIntervalSeconds * 1000)
         );
 
         for (String rawLine : template.split("\\R")) {

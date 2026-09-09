@@ -30,6 +30,7 @@ public class AppSettingsConfigurable implements SearchableConfigurable {
                 || settingsComponent.getInjectOtlpEnvironmentVariables() != settings.injectOtlpEnvironmentVariables.getValue()
                 || settingsComponent.getAppendCurlCompressed() != settings.appendCurlCompressed.getValue()
                 || settingsComponent.getFlushIntervalMillis() != settings.otlpFlushIntervalMillis
+                || settingsComponent.getMetricsFlushIntervalSeconds() != settings.otlpMetricsFlushIntervalSeconds
                 || !Objects.equals(settingsComponent.getOtlpEnvironmentVariables(), settings.otlpEnvironmentVariables);
     }
 
@@ -40,6 +41,7 @@ public class AppSettingsConfigurable implements SearchableConfigurable {
         settings.injectOtlpEnvironmentVariables.setValue(settingsComponent.getInjectOtlpEnvironmentVariables());
         settings.appendCurlCompressed.setValue(settingsComponent.getAppendCurlCompressed());
         settings.otlpFlushIntervalMillis = settingsComponent.getFlushIntervalMillis();
+        settings.otlpMetricsFlushIntervalSeconds = settingsComponent.getMetricsFlushIntervalSeconds();
         settings.otlpEnvironmentVariables = settingsComponent.getOtlpEnvironmentVariables();
     }
 
@@ -50,6 +52,7 @@ public class AppSettingsConfigurable implements SearchableConfigurable {
         settingsComponent.setInjectOtlpEnvironmentVariables(settings.injectOtlpEnvironmentVariables.getValue());
         settingsComponent.setAppendCurlCompressed(settings.appendCurlCompressed.getValue());
         settingsComponent.setFlushIntervalMillis(settings.otlpFlushIntervalMillis);
+        settingsComponent.setMetricsFlushIntervalSeconds(settings.otlpMetricsFlushIntervalSeconds);
         settingsComponent.setOtlpEnvironmentVariables(settings.otlpEnvironmentVariables);
     }
 

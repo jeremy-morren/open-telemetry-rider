@@ -31,6 +31,9 @@ public final class TelemetryDetailsPanel {
     private static final int MAX_KEY_WIDTH = 240;
     private static final int ROW_INDENT = 12;
 
+    /** Enough for the 16px icon buttons a row shows on hover. */
+    private static final int ROW_MIN_HEIGHT = 18;
+
     @NotNull
     private final DetailsPanel container;
     @NotNull
@@ -76,7 +79,7 @@ public final class TelemetryDetailsPanel {
     public void header(@NotNull String title, @Nullable String subtitle, @Nullable Color titleColor) {
         JPanel header = new JPanel(new BorderLayout(JBUI.scale(8), 0));
         header.setOpaque(false);
-        header.setBorder(JBUI.Borders.emptyBottom(6));
+        header.setBorder(JBUI.Borders.emptyBottom(4));
 
         JLabel titleLabel = new JLabel(title);
         titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, titleLabel.getFont().getSize() + 1f));
@@ -111,7 +114,7 @@ public final class TelemetryDetailsPanel {
 
         JPanel rowPanel = new JPanel(new BorderLayout(JBUI.scale(8), 0));
         rowPanel.setOpaque(false);
-        rowPanel.setBorder(JBUI.Borders.empty(1, ROW_INDENT, 1, 0));
+        rowPanel.setBorder(JBUI.Borders.empty(0, ROW_INDENT, 0, 0));
 
         JLabel keyLabel = new JLabel(key == null ? "" : key);
         keyLabel.setForeground(UIUtil.getContextHelpForeground());
@@ -120,8 +123,12 @@ public final class TelemetryDetailsPanel {
         keyLabels.add(keyLabel);
         rowPanel.add(keyLabel, BorderLayout.WEST);
 
-        rowPanel.add(value(text), BorderLayout.CENTER);
+        JComponent valueComponent = value(text);
+        rowPanel.add(valueComponent, BorderLayout.CENTER);
         JComponent actions = actions(value);
+        // Pinned to the row's height so revealing the buttons on hover cannot make the row jump.
+        actions.setPreferredSize(new Dimension(
+                actions.getPreferredSize().width, valueComponent.getPreferredSize().height));
         rowPanel.add(actions, BorderLayout.EAST);
         installHover(rowPanel, actions);
 
@@ -132,7 +139,7 @@ public final class TelemetryDetailsPanel {
     public void component(@NotNull JComponent component) {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
-        wrapper.setBorder(JBUI.Borders.empty(2, ROW_INDENT, 2, 0));
+        wrapper.setBorder(JBUI.Borders.empty(1, ROW_INDENT, 1, 0));
         wrapper.add(component, BorderLayout.CENTER);
         add(wrapper);
     }
@@ -155,9 +162,14 @@ public final class TelemetryDetailsPanel {
         field.setForeground(UIUtil.getLabelForeground());
         field.setCaretPosition(0);
         field.setToolTipText(text);
+        field.setMargin(JBUI.emptyInsets());
+        // A text field is sized for a form control - around 28px tall - which is far more than a line of
+        // text needs, and these rows are a dense list rather than a form. One line height it is, with
+        // room for the row's icon buttons.
+        int height = Math.max(field.getFontMetrics(field.getFont()).getHeight(), JBUI.scale(ROW_MIN_HEIGHT));
         // A long value must not widen the pane; the row stretches it to whatever width is going.
-        field.setPreferredSize(new Dimension(JBUI.scale(120), field.getPreferredSize().height));
-        field.setMinimumSize(new Dimension(0, field.getPreferredSize().height));
+        field.setPreferredSize(new Dimension(JBUI.scale(120), height));
+        field.setMinimumSize(new Dimension(0, height));
         return field;
     }
 
@@ -234,7 +246,7 @@ public final class TelemetryDetailsPanel {
             this.expanded = expanded;
 
             block.setOpaque(false);
-            block.setBorder(JBUI.Borders.emptyBottom(8));
+            block.setBorder(JBUI.Borders.emptyBottom(6));
 
             label = new JLabel(title, icon(), SwingConstants.LEADING);
             label.setFont(label.getFont().deriveFont(Font.BOLD));
@@ -242,7 +254,7 @@ public final class TelemetryDetailsPanel {
 
             JPanel header = new JPanel(new BorderLayout(JBUI.scale(8), 0));
             header.setOpaque(false);
-            header.setBorder(JBUI.Borders.empty(6, 0, 2, 0));
+            header.setBorder(JBUI.Borders.empty(4, 0, 1, 0));
             header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             header.add(label, BorderLayout.WEST);
             header.add(separator(), BorderLayout.CENTER);
