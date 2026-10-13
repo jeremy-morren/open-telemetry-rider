@@ -3,15 +3,14 @@ package jeremymorren.opentelemetry.util
 import java.text.DecimalFormat
 import java.time.Duration
 
+/** Formats durations for display in their largest significant unit, from hours down to nanoseconds. */
 class DurationFormatter {
 
     companion object {
 
 
-        /**
-         * Formats a duration as a string.
-         */
-        public fun format(duration: Duration): String {
+        /** Formats a duration as a string. */
+        fun format(duration: Duration): String {
             if (duration.isNegative) {
                 return "-" + formatInternal(duration.negated())
             }

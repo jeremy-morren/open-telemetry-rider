@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.function.Supplier;
 
+/** Toggles soft wraps in the details pane; the choice is remembered across IDE restarts. */
 public class ToggleUseSoftWrapsToolbarAction extends ToggleAction {
     @NotNull
     private final Supplier<Editor> editorSupplier;

@@ -8,6 +8,10 @@ import java.time.Duration
 import java.time.Instant
 import java.util.*
 
+/**
+ * A row of the telemetry table: the decoded [telemetry], its [json], and the [rawJson] OTLP message it
+ * came from, plus lower-cased copies of the text that case-insensitive search matches against.
+ */
 data class TelemetryItem(
     val json: String,
     val rawJson: String,
@@ -15,6 +19,11 @@ data class TelemetryItem(
 )
 {
     val lowerCaseJson: String = json.lowercase(Locale.getDefault())
+
+    /** The text the table shows, untruncated; searching matches this as well as the JSON. */
+    val displayText: String = telemetry.displayText ?: ""
+
+    val lowerCaseDisplayText: String = displayText.lowercase(Locale.getDefault())
 
     val timestamp: Instant? = telemetry.timestamp
 

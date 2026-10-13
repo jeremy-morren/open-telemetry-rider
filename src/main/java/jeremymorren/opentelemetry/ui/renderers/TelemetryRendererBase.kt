@@ -6,6 +6,7 @@ import javax.swing.JLabel
 import javax.swing.JTable
 import javax.swing.table.TableCellRenderer
 
+/** Base cell renderer for the telemetry table: an opaque label in the table's (selection) background. */
 open class TelemetryRendererBase : JLabel(), TableCellRenderer {
     override fun getTableCellRendererComponent(
         table: JTable,

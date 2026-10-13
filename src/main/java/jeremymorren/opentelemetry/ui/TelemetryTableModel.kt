@@ -8,11 +8,12 @@ import java.time.Instant
 import javax.swing.table.AbstractTableModel
 import kotlin.math.max
 
+/** Table model for the telemetry list: timestamp, duration, type and detail columns. */
 class TelemetryTableModel : AbstractTableModel() {
     private val columnNames = arrayOf(
         "timestamp", "duration", "type", "detail"
     )
-    private val columnClass = arrayOf<Class<*>>(
+    private val columnClass = arrayOf(
         Instant::class.java, Duration::class.java, TelemetryType::class.java, Telemetry::class.java
     )
 
@@ -44,7 +45,7 @@ class TelemetryTableModel : AbstractTableModel() {
 
     fun addRow(i: Int, telemetry: TelemetryItem) {
         telemetries.add(i, telemetry)
-        this.fireTableRowsInserted(telemetries.size - 1, telemetries.size - 1)
+        this.fireTableRowsInserted(i, i)
     }
 
     fun setRows(telemetries: List<TelemetryItem>) {

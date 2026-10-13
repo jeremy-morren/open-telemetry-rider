@@ -3,6 +3,7 @@ package jeremymorren.opentelemetry.tests;
 import jeremymorren.opentelemetry.models.Activity;
 import org.junit.Test;
 
+/** Tests for how W3C trace flags are shown as .NET {@code ActivityTraceFlags} names. */
 public class ActivityTraceFlagsDisplayTests {
     @Test
     public void mapsNotRecordedFromZero() {

@@ -190,7 +190,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          ./publishReport.ps1
+          ./.github/scripts/publishReport.ps1
           Get-Content -Path build/reports/pluginVerifier/githubSummary.md -Raw >> $env:GITHUB_STEP_SUMMARY
 
       # Publish Plugin Verifier Result as a PR comment

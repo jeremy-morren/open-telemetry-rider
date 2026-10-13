@@ -9,6 +9,7 @@ import jeremymorren.opentelemetry.settings.AppSettingState;
 import jeremymorren.opentelemetry.settings.FilterTelemetryMode;
 import org.jetbrains.annotations.NotNull;
 
+/** Selects how the telemetry table is sorted: by arrival order, duration or timestamp. */
 public class ChangeFilterModeToolbarAction extends ToggleAction {
     private final FilterTelemetryMode mode;
 

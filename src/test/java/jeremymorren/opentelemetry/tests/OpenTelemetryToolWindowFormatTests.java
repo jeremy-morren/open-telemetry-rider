@@ -27,42 +27,42 @@ public class OpenTelemetryToolWindowFormatTests {
     }
 
     @Test
-    public void formatInteger_belowThreshold_noSuffix() throws Exception {
+    public void formatInteger_belowThreshold_noSuffix() {
         assertEquals("999", OpenTelemetryToolWindow.format(999));
     }
 
     @Test
-    public void formatInteger_thousand_usesKSuffix() throws Exception {
+    public void formatInteger_thousand_usesKSuffix() {
         assertEquals("1.00 K", OpenTelemetryToolWindow.format(1_000));
     }
 
     @Test
-    public void formatInteger_million_usesMSuffix() throws Exception {
+    public void formatInteger_million_usesMSuffix() {
         assertEquals("1.00 M", OpenTelemetryToolWindow.format(1_000_000));
     }
 
     @Test
-    public void formatLong_roundsAndUsesKSuffix() throws Exception {
+    public void formatLong_roundsAndUsesKSuffix() {
         assertEquals("1.50 K", OpenTelemetryToolWindow.format(1_500L));
     }
 
     @Test
-    public void formatLong_roundsAndUsesMSuffix() throws Exception {
+    public void formatLong_roundsAndUsesMSuffix() {
         assertEquals("2.50 M", OpenTelemetryToolWindow.format(2_500_000L));
     }
 
     @Test
-    public void formatDouble_belowThreshold_noSuffix() throws Exception {
+    public void formatDouble_belowThreshold_noSuffix() {
         assertEquals("999.9", OpenTelemetryToolWindow.format(999.9));
     }
 
     @Test
-    public void formatDouble_thousand_usesKSuffix() throws Exception {
+    public void formatDouble_thousand_usesKSuffix() {
         assertEquals("1.0 K", OpenTelemetryToolWindow.format(1_000.0));
     }
 
     @Test
-    public void formatDouble_million_usesMSuffix() throws Exception {
+    public void formatDouble_million_usesMSuffix() {
         assertEquals("1.0 M", OpenTelemetryToolWindow.format(1_000_000.0));
     }
 }

@@ -8,14 +8,14 @@ import jeremymorren.opentelemetry.OpenTelemetryBundle;
 import jeremymorren.opentelemetry.settings.AppSettingState;
 import org.jetbrains.annotations.NotNull;
 
+/** Toggles case-insensitive matching for the telemetry filter. */
 public class ToggleCaseInsensitiveSearchToolbarAction extends ToggleAction {
 
     public ToggleCaseInsensitiveSearchToolbarAction() {
         super();
 
-        String message = OpenTelemetryBundle.message("ToggleCaseInsensitive.text");
-        this.getTemplatePresentation().setDescription(message);
-        this.getTemplatePresentation().setText(message);
+        this.getTemplatePresentation().setText(OpenTelemetryBundle.message("ToggleCaseInsensitive.text"));
+        this.getTemplatePresentation().setDescription(OpenTelemetryBundle.message("ToggleCaseInsensitive.description"));
         this.getTemplatePresentation().setIcon(AllIcons.Actions.MatchCase);
     }
 

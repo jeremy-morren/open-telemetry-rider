@@ -17,6 +17,9 @@ import io.opentelemetry.proto.trace.v1.ResourceSpans;
 import io.opentelemetry.proto.trace.v1.ScopeSpans;
 import io.opentelemetry.proto.trace.v1.Span;
 import io.opentelemetry.proto.trace.v1.Status;
+import jeremymorren.opentelemetry.models.Activity;
+import jeremymorren.opentelemetry.models.LogMessage;
+import jeremymorren.opentelemetry.models.ObjectDictionary;
 import jeremymorren.opentelemetry.models.TelemetryItem;
 import jeremymorren.opentelemetry.models.TelemetryType;
 import jeremymorren.opentelemetry.otlp.OtlpTelemetryDecoder;
@@ -25,6 +28,7 @@ import org.junit.Test;
 import java.time.Duration;
 import java.util.List;
 
+/** Tests for decoding OTLP traces, logs and metrics into telemetry. */
 public class OtlpTelemetryDecoderTests {
     private final OtlpTelemetryDecoder decoder = new OtlpTelemetryDecoder();
 
@@ -64,12 +68,16 @@ public class OtlpTelemetryDecoderTests {
         List<TelemetryItem> telemetries = decoder.decodeTraces(request.toByteArray());
 
         assert telemetries.size() == 1;
-        assert telemetries.get(0).getTelemetry().getType() == TelemetryType.Exception;
-        assert telemetries.get(0).getTelemetry().getActivity() != null;
-        assert Duration.ofSeconds(1).equals(telemetries.get(0).getDuration());
-        assert "Recorded".equals(telemetries.get(0).getTelemetry().getActivity().getTraceIds().get("Flags"));
-        assert "/weather".equals(telemetries.get(0).getTelemetry().getActivity().getRequestPath());
-        assert "demo-api".equals(telemetries.get(0).getTelemetry().getResource().getString("service.name"));
+        TelemetryItem item = telemetries.getFirst();
+        assert item.getTelemetry().getType() == TelemetryType.Exception;
+        assert Duration.ofSeconds(1).equals(item.getDuration());
+        Activity activity = item.getTelemetry().getActivity();
+        assert activity != null;
+        assert "Recorded".equals(activity.getTraceIds().get("Flags"));
+        assert "/weather".equals(activity.getRequestPath());
+        ObjectDictionary resource = item.getTelemetry().getResource();
+        assert resource != null;
+        assert "demo-api".equals(resource.getString("service.name"));
     }
 
     @Test
@@ -97,14 +105,17 @@ public class OtlpTelemetryDecoderTests {
         List<TelemetryItem> telemetries = decoder.decodeLogs(request.toByteArray());
 
         assert telemetries.size() == 1;
-        assert telemetries.get(0).getTelemetry().getType() == TelemetryType.Message;
-        assert telemetries.get(0).getTelemetry().getLog() != null;
-        assert "cache miss for {CacheKey}".equals(telemetries.get(0).getTelemetry().getLog().getBody());
-        assert "cache miss for user:42".equals(telemetries.get(0).getTelemetry().getLog().getFormattedMessage());
-        assert "Demo.Logs".equals(telemetries.get(0).getTelemetry().getLog().getCategoryName());
-        assert telemetries.get(0).getTelemetry().getLog().getEventId().getId() == 7;
-        assert telemetries.get(0).getRawJson().contains("\n");
-        assert telemetries.get(0).getRawJson().contains("  \"timeUnixNano\"");
+        TelemetryItem item = telemetries.getFirst();
+        assert item.getTelemetry().getType() == TelemetryType.Message;
+        LogMessage log = item.getTelemetry().getLog();
+        assert log != null;
+        assert "cache miss for {CacheKey}".equals(log.getBody());
+        assert "cache miss for user:42".equals(log.getFormattedMessage());
+        assert "Demo.Logs".equals(log.getCategoryName());
+        assert log.getEventId() != null;
+        assert log.getEventId().getId() == 7;
+        assert item.getRawJson().contains("\n");
+        assert item.getRawJson().contains("  \"timeUnixNano\"");
     }
 
     @Test
@@ -133,11 +144,14 @@ public class OtlpTelemetryDecoderTests {
         List<TelemetryItem> telemetries = decoder.decodeMetrics(request.toByteArray());
 
         assert telemetries.size() == 1;
-        assert telemetries.get(0).getTelemetry().getType() == TelemetryType.Metric;
-        assert telemetries.get(0).getTelemetry().getMetric() != null;
-        assert "http.server.request.duration".equals(telemetries.get(0).getTelemetry().getMetric().getName());
-        assert "CUMULATIVE".equals(telemetries.get(0).getTelemetry().getMetric().getTemporality());
-        assert telemetries.get(0).getTelemetry().getMetric().getPoints().get(0).getDoubleSum() == 42.5;
+        TelemetryItem item = telemetries.getFirst();
+        assert item.getTelemetry().getType() == TelemetryType.Metric;
+        jeremymorren.opentelemetry.models.Metric decoded = item.getTelemetry().getMetric();
+        assert decoded != null;
+        assert "http.server.request.duration".equals(decoded.getName());
+        assert "CUMULATIVE".equals(decoded.getTemporality());
+        assert decoded.getPoints() != null;
+        assert Double.valueOf(42.5).equals(decoded.getPoints().getFirst().getDoubleSum());
     }
 
     private static KeyValue stringAttribute(String key, String value) {

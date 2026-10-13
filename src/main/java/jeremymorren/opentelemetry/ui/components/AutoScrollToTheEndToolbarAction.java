@@ -9,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.function.Consumer;
 
+/** Toggles scrolling the telemetry table to the end as new telemetry arrives. */
 public class AutoScrollToTheEndToolbarAction extends ToggleAction {
     private boolean state;
     private final Consumer<Boolean> onSelect;

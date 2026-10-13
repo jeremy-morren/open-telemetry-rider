@@ -1,11 +1,9 @@
 @file:Suppress(
     "PROVIDED_RUNTIME_TOO_LOW",  // See https://github.com/Kotlin/kotlinx.serialization/issues/993#issuecomment-984742051
     "unused")
-@file:OptIn(ExperimentalSerializationApi::class)
 
 package jeremymorren.opentelemetry.models
 
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -20,19 +18,13 @@ import kotlinx.serialization.json.*
 @Serializable(with = ObjectDictionary.ObjectDictionarySerializer::class)
 class ObjectDictionary(private val json: JsonObject) {
 
-    /**
-     * The deserialized values
-     */
+    /** The deserialized values */
     val values: Map<String, Any?> = createMap(json)
 
-    /**
-     * Check if the dictionary contains a key.
-     */
+    /** Check if the dictionary contains a key. */
     fun containsKey(key: String): Boolean = values.containsKey(key)
 
-    /**
-     * Get a value from the dictionary as a string.
-     */
+    /** Get a value from the dictionary as a string. */
     fun getString(key: String): String? {
         val value = values[key]
         if (value is String) {
@@ -44,12 +36,10 @@ class ObjectDictionary(private val json: JsonObject) {
         if (value is Boolean) {
             return value.toString()
         }
-        return value?.toString();
+        return value?.toString()
     }
 
-    /**
-     * Get a value from the dictionary as a string, or a default value if the key is not present.
-     */
+    /** Get a value from the dictionary as a string, or a default value if the key is not present. */
     fun getStringOrDefault(key: String, default: String): String {
         return getString(key) ?: default
     }
@@ -71,20 +61,26 @@ class ObjectDictionary(private val json: JsonObject) {
         return result
     }
 
-    override fun toString(): String {
-        return values.toString();
-    }
-
-    override fun equals(other: Any?): Boolean {
-        if (other !is ObjectDictionary) {
-            return false
+    /**
+     * Values formatted for display, including arrays of primitives - which is how the semantic
+     * conventions carry HTTP headers (`http.request.header.<name>`), so those show up too.
+     * Nested objects are still skipped; the Raw tab is the place for those.
+     */
+    fun getDisplayValues(): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        for ((key, value) in values) {
+            displayValue(value)?.let { result[key] = it }
         }
-        return valueEquals(values, other.values)
+        return result
     }
 
-    override fun hashCode(): Int {
-        return 0 //Not implemented
+    override fun toString(): String {
+        return values.toString()
     }
+
+    override fun equals(other: Any?): Boolean = other is ObjectDictionary && values == other.values
+
+    override fun hashCode(): Int = values.hashCode()
 
     companion object {
         private fun createMap(json: JsonObject): Map<String, Any?> {
@@ -92,12 +88,19 @@ class ObjectDictionary(private val json: JsonObject) {
             for ((key, value) in json) {
                 result[key] = createObject(value)
             }
-            return result;
+            return result
         }
 
-        /**
-         * Create a native object from a JSON element.
-         */
+        /** Formats a single value for display, or null when it has no sensible one-line form. */
+        private fun displayValue(value: Any?): String? = when (value) {
+            is String -> value
+            is Number -> value.toString()
+            is Boolean -> value.toString()
+            is List<*> -> value.mapNotNull(::displayValue).joinToString(", ").takeUnless { it.isEmpty() }
+            else -> null
+        }
+
+        /** Create a native object from a JSON element. */
         private fun createObject(value: JsonElement?): Any? {
             if (value is JsonPrimitive) {
                 return value.booleanOrNull
@@ -117,40 +120,9 @@ class ObjectDictionary(private val json: JsonObject) {
             }
             return null //Unknown type or null
         }
-
-        /**
-         * Compare two values for equality.
-         */
-        private fun valueEquals(left: Any?, right: Any?) : Boolean {
-            if (left == null) {
-                return right == null
-            }
-            if (left is String) {
-                return right is String && left == right
-            }
-            if (left is Boolean) {
-                return right is Boolean && left == right
-            }
-            if (left is Int) {
-                return right is Int && left == right
-            }
-            if (left is Double) {
-                return right is Double && left == right
-            }
-            if (left is List<*>) {
-                return right is List<*> &&
-                        left.size == right.size &&
-                        left.zip(right).all { (a, b) -> valueEquals(a, b) }
-            }
-            if (left is Map<*, *>) {
-                return right is Map<*, *> &&
-                        left.size == right.size &&
-                        left.all { (k, v) -> valueEquals(v, right[k]) }
-            }
-            return false
-        }
     }
 
+    /** Serializes an [ObjectDictionary] as its underlying JSON object. */
     class ObjectDictionarySerializer : KSerializer<ObjectDictionary> {
         override val descriptor: SerialDescriptor = SerialDescriptor(
             "jeremymorren.opentelemetry.ObjectDictionary",

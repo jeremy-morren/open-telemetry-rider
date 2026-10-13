@@ -4,9 +4,7 @@ import java.time.Duration
 import java.time.Instant
 
 
-/**
- * A metric.
- */
+/** A metric. */
 data class Metric(
     val metricType: String? = null,
     val temporality: String? = null,
@@ -19,29 +17,13 @@ data class Metric(
     val points: List<MetricPoint>? = null
 )
 {
-    /**
-     * Telemetry type (always [TelemetryType.Metric]).
-     */
+    /** Telemetry type (always [TelemetryType.Metric]). */
     val type: TelemetryType get() = TelemetryType.Metric
 
-    /**
-     * The timestamp of the metric, if available.
-     */
-    val timestamp: Instant? get() {
-        if (points == null) {
-            return null
-        }
-        for (point in points) {
-            if (point.startTime != null) {
-                return point.startTime
-            }
-        }
-        return null
-    }
+    /** The timestamp of the metric, if available. */
+    val timestamp: Instant? get() = points?.firstNotNullOfOrNull { it.startTime }
 
-    /**
-     * The last metric point for each tag.
-     */
+    /** The last metric point for each tag. */
     val taggedPoints: List<MetricPoint>? get() {
         if (points == null) {
             return null
@@ -53,9 +35,7 @@ data class Metric(
         return map.values.toList()
     }
 
-    /**
-     * Detail display string for the metric.
-     */
+    /** Detail display string for the metric. */
     val detail: String? get() {
         val parts = mutableListOf<String>()
         if (!name.isNullOrEmpty()) {
@@ -67,15 +47,13 @@ data class Metric(
         if (!meterName.isNullOrEmpty()) {
             parts.add(meterName)
         }
-        if (parts.size == 0) {
+        if (parts.isEmpty()) {
             return null
         }
         return parts.joinToString(" - ")
     }
 
-    /**
-     * The meter display string.
-     */
+    /** The meter display string. */
     val meter: String? get() {
         if (meterName.isNullOrEmpty()) {
             return null
@@ -86,15 +64,11 @@ data class Metric(
         return "$meterName ($meterVersion)"
     }
 
-    /**
-     * The measurement duration.
-     */
+    /** The measurement duration. */
     val duration: Duration? get() = points?.firstNotNullOf { it.duration }
 }
 
-/**
- * A metric point.
- */
+/** A metric point. */
 data class MetricPoint(
     val startTime: Instant? = null,
     val endTime: Instant? = null,

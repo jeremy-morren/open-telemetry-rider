@@ -1,0 +1,10 @@
+<Project>
+
+    <!-- Both sample apps run off the same configuration, so it lives next to the solution. -->
+    <ItemGroup Condition="'$(OutputType)' == 'Exe'">
+        <Content Include="$(MSBuildThisFileDirectory)appsettings.json"
+                 Link="appsettings.json"
+                 CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+</Project>

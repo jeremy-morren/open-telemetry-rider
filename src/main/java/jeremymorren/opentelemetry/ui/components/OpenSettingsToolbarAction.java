@@ -7,9 +7,10 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.Project;
 import jeremymorren.opentelemetry.OpenTelemetryBundle;
-import jeremymorren.opentelemetry.settings.ProjectSettingsConfigurable;
+import jeremymorren.opentelemetry.settings.AppSettingsConfigurable;
 import org.jetbrains.annotations.NotNull;
 
+/** Opens the plugin's global settings page. */
 public class OpenSettingsToolbarAction extends AnAction {
     public OpenSettingsToolbarAction() {
         super();
@@ -23,6 +24,6 @@ public class OpenSettingsToolbarAction extends AnAction {
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getData(CommonDataKeys.PROJECT);
         if (project != null)
-            ShowSettingsUtil.getInstance().showSettingsDialog(project, ProjectSettingsConfigurable.class);
+            ShowSettingsUtil.getInstance().showSettingsDialog(project, AppSettingsConfigurable.class);
     }
 }

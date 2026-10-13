@@ -1,12 +1,10 @@
 package jeremymorren.opentelemetry.models
 
-import jeremymorren.opentelemetry.models.DependencyType.HTTP
-import jeremymorren.opentelemetry.models.DependencyType.SQL
 import java.net.URI
 import java.time.Duration
 import java.time.Instant
-import java.util.*
 
+/** A span decoded from an OTLP trace, shaped like a .NET `System.Diagnostics.Activity`. */
 data class Activity(
     val rootId: String? = null,
     val traceId: String? = null,
@@ -28,9 +26,7 @@ data class Activity(
     val activityTraceFlagsDisplay: String?
         get() = formatActivityTraceFlags(activityTraceFlags)
 
-    /**
-     * The type of the activity.
-     */
+    /** The type of the activity. */
     val type: TelemetryType
         get() =
             if (exception != null) TelemetryType.Exception
@@ -38,9 +34,7 @@ data class Activity(
             else if (kind == ActivityKind.Client) TelemetryType.Dependency
             else TelemetryType.Activity
 
-    /**
-     * The dependency type (HTTP or SQL) if the activity is a dependency.
-     */
+    /** The dependency type (HTTP or SQL) if the activity is a dependency. */
     val dependencyType: DependencyType?
         get() =
             if (kind == ActivityKind.Client)
@@ -64,9 +58,7 @@ data class Activity(
                 tags?.containsKey("error.type") == true ||
                 tags?.getString("otel.status_code") == "ERROR"
 
-    /**
-     * The error display string.
-     */
+    /** The error display string. */
     val errorDisplay: String? get() =
         exception?.message?.replace("\n", " ") ?:
         tags?.getString("otel.status_description") ?:
@@ -74,28 +66,24 @@ data class Activity(
         tags?.getString("db.response.status_code") ?:
         tags?.getString("error.type")
 
-    /**
-     * Exception (extracted from [events])
-     */
+    /** Exception (extracted from [events]) */
     val exception: ActivityException?
         get() {
-            for (event in events ?: emptyList()) {
-                if (event.name == "exception" && event.tags != null && event.timestamp != null) {
-                    val tags = event.tags.getPrimitiveValues()
+            for ((name, timestamp, eventTags) in events ?: emptyList()) {
+                if (name == "exception" && eventTags != null && timestamp != null) {
+                    val tags = eventTags.getPrimitiveValues()
                     val message = tags["exception.message"]
                     val stacktrace = tags["exception.stacktrace"]
                     val type = tags["exception.type"]
                     if (message != null && stacktrace != null && type != null) {
-                        return ActivityException(event.timestamp, message, stacktrace, type)
+                        return ActivityException(timestamp, message, stacktrace, type)
                     }
                 }
             }
             return null
         }
 
-    /**
-     * The display string for the activity type (type and subtype).
-     */
+    /** The display string for the activity type (type and subtype). */
     val typeDisplay: String
         get() {
             if (dependencyType == null) {
@@ -104,9 +92,7 @@ data class Activity(
             return "${type.name} - ${dependencyType!!.name}"
         }
 
-    /**
-     * Request path for request activity (request i.e. server side)
-     */
+    /** Request path for request activity (request i.e. server side) */
     val requestPath: String?
         get() {
             if (tags == null) return null
@@ -120,9 +106,7 @@ data class Activity(
             return sb.toString()
         }
 
-    /**
-     * The URL path for HTTP request (dependency i.e. client side)
-     */
+    /** The URL path for HTTP request (dependency i.e. client side) */
     val urlPath: String?
         get() {
             val value = tags?.getString("url.full") ?: return null
@@ -134,29 +118,21 @@ data class Activity(
                     return uri.path
                 }
                 return "${uri.path}?${uri.query}"
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 return value
             }
         }
 
-    /**
-     * The database query for SQL activity.
-     */
+    /** The database query for SQL activity. */
     val dbQuery: String? get() = tags?.getString("db.query.text") ?: tags?.getString("db.statement")
 
-    /**
-     * The database name for SQL activity.
-     */
+    /** The database name for SQL activity. */
     val dbName: String? get() = tags?.getString("db.name")
 
-    /**
-     * The response status code for HTTP request activity.
-     */
+    /** The response status code for HTTP request activity. */
     val responseStatusCode: String? get() = tags?.getString("http.response.status_code")
 
-    /**
-     * Gets the trace IDs as a map.
-     */
+    /** Gets the trace IDs as a map. */
     val traceIds: Map<String, String> get() {
         val traceIds = mutableMapOf<String, String>()
         if (rootId != null)
@@ -172,25 +148,21 @@ data class Activity(
         return traceIds
     }
 
-    /**
-     * Gets the time spent in the database (i.e. time between start of activity and first response received)
-     */
+    /** Gets the time spent in the database (i.e. time between start of activity and first response received) */
     val dbQueryTime: Duration? get() {
         if (events == null || startTime == null) {
             return null
         }
         // Find the event called "received-first-response"
-        for (event in events) {
-            if (event.name == "received-first-response" && event.timestamp != null) {
-                return Duration.between(startTime, event.timestamp)
+        for ((name, timestamp) in events) {
+            if (name == "received-first-response" && timestamp != null) {
+                return Duration.between(startTime, timestamp)
             }
         }
         return null
     }
 
-    /**
-     * Gets the time spent reading from the database (i.e. time between first response received and end of activity)
-     */
+    /** Gets the time spent reading from the database (i.e. time between first response received and end of activity) */
     val dbReadTime: Duration? get() {
         if (dbQueryTime == null || duration == null) {
             return null
@@ -198,15 +170,25 @@ data class Activity(
         return duration - dbQueryTime!!
     }
 
-    /**
-     * Detail string for the activity.
-     */
+    /** Detail string for the activity, as shown in the table (truncated to fit). */
     val detail: String? get() {
+        val full = detailFull ?: return null
+        if (full.length > DETAIL_DISPLAY_LENGTH) {
+            return full.substring(0, DETAIL_DISPLAY_LENGTH) + "..."
+        }
+        return full
+    }
+
+    /**
+     * The untruncated form of [detail]. This is what searching matches against, so that a filter can
+     * match text the table had to cut off.
+     */
+    val detailFull: String? get() {
         val parts = mutableListOf<String>()
         if (dependencyType != null) {
             parts.add(dependencyType!!.name)
         }
-        //Show the source if the type is activity (i.e. not request or dependency)
+        // Show the source if the type is activity (i.e. not request or dependency)
         if (source != null && type == TelemetryType.Activity) {
             parts.add(source.name)
         }
@@ -215,8 +197,8 @@ data class Activity(
             if (displayName != dbName) {
                 parts.add(displayName)
             }
-            //If the request does not match a controller, display name will only be method
-            //For those, add the request path to the detail
+            // If the request does not match a controller, display name will only be method
+            // For those, add the request path to the detail
             if (type == TelemetryType.Request && requestPath != null && !displayName.contains(' ')) {
                 parts.add(requestPath!!)
             }
@@ -239,19 +221,18 @@ data class Activity(
         if (urlPath != null) {
             parts.add(urlPath!!)
         }
-        if (parts.size == 0) {
+        if (parts.isEmpty()) {
             return null
         }
-        val str = parts.joinToString(" - ")
+        // Newlines are flattened so that multi-line SQL reads - and searches - as one line.
+        return parts.joinToString(" - ")
             .replace("\r", "")
             .replace("\n", " ")
-        if (str.length > 100) {
-            return str.substring(0, 100) + "..."
-        }
-        return str
     }
 
     companion object {
+        private const val DETAIL_DISPLAY_LENGTH = 100
+
         @JvmStatic
         fun formatActivityTraceFlags(raw: String?): String? {
             if (raw == null) {
@@ -275,23 +256,20 @@ data class Activity(
     }
 }
 
+/** The instrumentation scope that produced an activity (its .NET `ActivitySource`). */
 data class ActivitySource(
     val name: String,
     val version: String? = null
 )
-{
-    val nameLower: String = name.lowercase(Locale.ROOT)
-}
 
-/**
- * An activity event.
- */
+/** An activity event. */
 data class ActivityEvent(
     val name: String? = null,
     val timestamp: Instant? = null,
     val tags: ObjectDictionary? = null,
 )
 
+/** An exception recorded on an activity as an `exception` event. */
 data class ActivityException(
     val timestamp: Instant,
     val message: String,
@@ -323,13 +301,11 @@ enum class ActivityKind {
     Consumer,
 }
 
-/**
- * Dependency type. Determined from the activity tags.
- * @property HTTP The activity is an HTTP request.
- * @property SQL The activity is a SQL query.
- */
+/** Dependency type. Determined from the activity tags. */
 enum class DependencyType {
+    /** The activity is an HTTP request. */
     HTTP,
+    /** The activity is a SQL query. */
     SQL
 }
 
