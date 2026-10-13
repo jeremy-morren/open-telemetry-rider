@@ -6,6 +6,7 @@ import jeremymorren.opentelemetry.models.Telemetry
 import java.awt.Component
 import javax.swing.JTable
 
+/** Renders the detail column, colored by error status or log level. */
 class TelemetryRenderer : TelemetryRendererBase() {
     override fun getTableCellRendererComponent(
         table: JTable,

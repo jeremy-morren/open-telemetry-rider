@@ -5,6 +5,7 @@ import java.awt.Component
 import java.time.Duration
 import javax.swing.JTable
 
+/** Renders the duration column in its largest significant unit (e.g. `12.5 ms`, `1m 3.0s`). */
 class DurationRenderer : TelemetryRendererBase() {
     override fun getTableCellRendererComponent(
         table: JTable,

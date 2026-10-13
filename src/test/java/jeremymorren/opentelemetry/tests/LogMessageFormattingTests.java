@@ -57,8 +57,9 @@ public class LogMessageFormattingTests {
 
         List<TelemetryItem> items = decoder.decodeLogs(request.toByteArray());
         assertEquals(1, items.size());
-        assertNotNull(items.get(0).getTelemetry().getLog());
-        return items.get(0).getTelemetry().getLog();
+        LogMessage log = items.getFirst().getTelemetry().getLog();
+        assertNotNull(log);
+        return log;
     }
 
     private static KeyValue str(String key, String value) {
@@ -448,7 +449,7 @@ public class LogMessageFormattingTests {
         List<TelemetryItem> items = decoder.decodeLogs(request.toByteArray());
 
         assertEquals(1, items.size());
-        String rawJson = items.get(0).getRawJson();
+        String rawJson = items.getFirst().getRawJson();
 
         // Protobuf JSON uses camelCase field names from the .proto schema,
         // not the Jackson-serialized domain model fields.
@@ -485,7 +486,7 @@ public class LogMessageFormattingTests {
         List<TelemetryItem> items = decoder.decodeTraces(request.toByteArray());
 
         assertEquals(1, items.size());
-        String rawJson = items.get(0).getRawJson();
+        String rawJson = items.getFirst().getRawJson();
         assertNotNull(rawJson);
         // Protobuf JSON for a Span uses "name", "kind", "startTimeUnixNano"
         assertTrue("rawJson should contain span name", rawJson.contains("my-span"));

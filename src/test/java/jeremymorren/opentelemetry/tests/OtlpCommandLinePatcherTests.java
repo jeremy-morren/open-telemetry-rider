@@ -7,15 +7,20 @@ import org.junit.Test;
 
 import java.net.URI;
 
+/** Tests for injecting the OTLP environment variables into launched processes. */
 public class OtlpCommandLinePatcherTests {
     @Test
     public void patchesResolvedEnvironmentVariablesWhenInjectionEnabled() {
         AppSettingState settings = new AppSettingState();
         settings.enableLoopbackOtlpReceiver.setValue(true);
         settings.injectOtlpEnvironmentVariables.setValue(true);
+        settings.otlpFlushIntervalMillis = 250;
+        settings.otlpMetricsFlushIntervalSeconds = 20;
         settings.otlpEnvironmentVariables = String.join("\n",
                 "OTEL_EXPORTER_OTLP_ENDPOINT=${OTLP_ENDPOINT}",
                 "OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
+                "OTEL_BSP_SCHEDULE_DELAY=${OTLP_FLUSH_INTERVAL}",
+                "OTEL_METRIC_EXPORT_INTERVAL=${OTLP_METRICS_FLUSH_INTERVAL}",
                 "CUSTOM_ENDPOINT=${OTLP_HOST}:${OTLP_PORT}"
         );
 
@@ -25,6 +30,8 @@ public class OtlpCommandLinePatcherTests {
 
         assert "http://127.0.0.1:4318".equals(commandLine.getEnvironment().get("OTEL_EXPORTER_OTLP_ENDPOINT"));
         assert "http/protobuf".equals(commandLine.getEnvironment().get("OTEL_EXPORTER_OTLP_PROTOCOL"));
+        assert "250".equals(commandLine.getEnvironment().get("OTEL_BSP_SCHEDULE_DELAY"));
+        assert "20000".equals(commandLine.getEnvironment().get("OTEL_METRIC_EXPORT_INTERVAL"));
         assert "127.0.0.1:4318".equals(commandLine.getEnvironment().get("CUSTOM_ENDPOINT"));
     }
 

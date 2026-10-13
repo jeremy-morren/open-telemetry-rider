@@ -3,7 +3,9 @@ package jeremymorren.opentelemetry.tests;
 import com.google.protobuf.ByteString;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
+import com.intellij.openapi.util.SystemInfo;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpPrincipal;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
@@ -38,6 +40,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -47,48 +50,55 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/** Tests for decoding received OTLP payloads and routing them to the listeners of their scope. */
 public class OtlpHttpReceiverServiceTests {
     @Test
-    public void addListenerReplaysOnlyMatchingScopeHistory() throws Exception {
-        OtlpHttpReceiverService service = new OtlpHttpReceiverService();
-        TelemetryItem projectOneTelemetry = telemetry("project-one");
-        TelemetryItem projectTwoTelemetry = telemetry("project-two");
+    public void theAddressItListensOnCanBeBoundOnThisPlatform() throws Exception {
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(InetAddress.getByName(OtlpHttpReceiverService.BIND_ADDRESS), 0), 0);
 
-        publish(service, "project-one", projectOneTelemetry);
-        publish(service, "project-two", projectTwoTelemetry);
-
-        List<TelemetryItem> projectOneReceived = new ArrayList<>();
-        List<TelemetryItem> projectTwoReceived = new ArrayList<>();
-
-        service.addListener("project-one", (Consumer<TelemetryItem>) projectOneReceived::add);
-        service.addListener("project-two", (Consumer<TelemetryItem>) projectTwoReceived::add);
-
-        assert projectOneReceived.size() == 1;
-        assert projectOneReceived.get(0) == projectOneTelemetry;
-        assert projectTwoReceived.size() == 1;
-        assert projectTwoReceived.get(0) == projectTwoTelemetry;
+        try {
+            assert server.getAddress().getAddress().isLoopbackAddress();
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
-    public void clearRemovesOnlyMatchingScopeHistory() throws Exception {
+    public void listensOnASecondLoopbackAddressEverywhereMacOsAllowsOnlyOne() {
+        String expected = SystemInfo.isMac ? "127.0.0.1" : "127.0.0.2";
+
+        assert expected.equals(OtlpHttpReceiverService.BIND_ADDRESS);
+    }
+
+    @Test
+    public void telemetryIsNotBufferedForListenersRegisteredLater() throws Exception {
         OtlpHttpReceiverService service = new OtlpHttpReceiverService();
-        TelemetryItem projectOneTelemetry = telemetry("project-one");
-        TelemetryItem projectTwoTelemetry = telemetry("project-two");
 
-        publish(service, "project-one", projectOneTelemetry);
-        publish(service, "project-two", projectTwoTelemetry);
+        publish(service, telemetry());
 
-        service.clear("project-one");
+        List<TelemetryItem> received = new ArrayList<>();
+        try (var ignored = service.addListener("project-one", (Consumer<TelemetryItem>) received::add)) {
+            // A new debug session must start from an empty log, even when an earlier session in the same
+            // project already received telemetry.
+            assert received.isEmpty();
+        }
+    }
 
+    @Test
+    public void telemetryIsOnlyPublishedToItsOwnScope() throws Exception {
+        OtlpHttpReceiverService service = new OtlpHttpReceiverService();
         List<TelemetryItem> projectOneReceived = new ArrayList<>();
         List<TelemetryItem> projectTwoReceived = new ArrayList<>();
+        try (var ignoredOne = service.addListener("project-one", (Consumer<TelemetryItem>) projectOneReceived::add);
+             var ignoredTwo = service.addListener("project-two", (Consumer<TelemetryItem>) projectTwoReceived::add)) {
+            TelemetryItem projectOneTelemetry = telemetry();
+            publish(service, projectOneTelemetry);
 
-        service.addListener("project-one", (Consumer<TelemetryItem>) projectOneReceived::add);
-        service.addListener("project-two", (Consumer<TelemetryItem>) projectTwoReceived::add);
-
-        assert projectOneReceived.isEmpty();
-        assert projectTwoReceived.size() == 1;
-        assert projectTwoReceived.get(0) == projectTwoTelemetry;
+            assert projectOneReceived.size() == 1;
+            assert projectOneReceived.getFirst() == projectOneTelemetry;
+            assert projectTwoReceived.isEmpty();
+        }
     }
 
     @Test
@@ -99,7 +109,7 @@ public class OtlpHttpReceiverServiceTests {
         AutoCloseable registration = service.addListener("project-one", (Consumer<TelemetryItem>) received::add);
         registration.close();
 
-        publish(service, "project-one", telemetry("project-one"));
+        publish(service, telemetry());
 
         assert received.isEmpty();
     }
@@ -117,43 +127,54 @@ public class OtlpHttpReceiverServiceTests {
         OtlpHttpReceiverService service = new OtlpHttpReceiverService();
         List<TelemetryItem> projectOneReceived = new ArrayList<>();
         List<TelemetryItem> projectTwoReceived = new ArrayList<>();
-        service.addListener("project-one", (Consumer<TelemetryItem>) projectOneReceived::add);
-        service.addListener("project-two", (Consumer<TelemetryItem>) projectTwoReceived::add);
+        try (var ignoredOne = service.addListener("project-one", (Consumer<TelemetryItem>) projectOneReceived::add);
+             var ignoredTwo = service.addListener("project-two", (Consumer<TelemetryItem>) projectTwoReceived::add)) {
+            FakeHttpExchange exchange = new FakeHttpExchange("POST", "/project-one/v1/logs", createLogsPayload());
 
-        FakeHttpExchange exchange = new FakeHttpExchange("POST", "/project-one/v1/logs", createLogsPayload());
+            handle(service, exchange);
 
-        handle(service, exchange);
-
-        assert exchange.responseCode == 200;
-        assert "".equals(exchange.responseBodyAsString());
-        assert "text/plain; charset=utf-8".equals(exchange.getResponseHeaders().getFirst("Content-Type"));
-        assert projectOneReceived.size() == 1;
-        assert projectOneReceived.get(0).getTelemetry().getType() == TelemetryType.Message;
-        assert projectTwoReceived.isEmpty();
+            assert exchange.responseCode == 200;
+            assert "".equals(exchange.responseBodyAsString());
+            assert "text/plain; charset=utf-8".equals(exchange.getResponseHeaders().getFirst("Content-Type"));
+            assert projectOneReceived.size() == 1;
+            assert projectOneReceived.getFirst().getTelemetry().getType() == TelemetryType.Message;
+            assert projectTwoReceived.isEmpty();
+        }
     }
 
     @Test
     public void handleDecodesMetricsPayloadFromRequestPath() throws Exception {
         OtlpHttpReceiverService service = new OtlpHttpReceiverService();
         List<TelemetryItem> received = new ArrayList<>();
-        service.addListener("project-one", (Consumer<TelemetryItem>) received::add);
+        try (var ignored = service.addListener("project-one", (Consumer<TelemetryItem>) received::add)) {
+            handle(service, new FakeHttpExchange("POST", "/project-one/v1/metrics", createMetricsPayload()));
 
-        handle(service, new FakeHttpExchange("POST", "/project-one/v1/metrics", createMetricsPayload()));
-
-        assert received.size() == 1;
-        assert received.get(0).getTelemetry().getType() == TelemetryType.Metric;
+            assert received.size() == 1;
+            assert received.getFirst().getTelemetry().getType() == TelemetryType.Metric;
+        }
     }
 
     @Test
     public void handleDecodesTracePayloadFromRequestPath() throws Exception {
         OtlpHttpReceiverService service = new OtlpHttpReceiverService();
         List<TelemetryItem> received = new ArrayList<>();
-        service.addListener("project-one", (Consumer<TelemetryItem>) received::add);
+        try (var ignored = service.addListener("project-one", (Consumer<TelemetryItem>) received::add)) {
+            handle(service, new FakeHttpExchange("POST", "/project-one/v1/traces", createTracesPayload()));
 
-        handle(service, new FakeHttpExchange("POST", "/project-one/v1/traces", createTracesPayload()));
+            assert received.size() == 1;
+            assert received.getFirst().getTelemetry().getType() == TelemetryType.Exception;
+        }
+    }
 
-        assert received.size() == 1;
-        assert received.get(0).getTelemetry().getType() == TelemetryType.Exception;
+    @Test
+    public void handleRejectsUnscopedPath() throws Exception {
+        OtlpHttpReceiverService service = new OtlpHttpReceiverService();
+        FakeHttpExchange exchange = new FakeHttpExchange("POST", "/v1/logs", new byte[0]);
+
+        handle(service, exchange);
+
+        assert exchange.responseCode == 404;
+        assert "Not Found".equals(exchange.responseBodyAsString());
     }
 
     @Test
@@ -199,10 +220,10 @@ public class OtlpHttpReceiverServiceTests {
         }
     }
 
-    private static void publish(OtlpHttpReceiverService service, String scopeKey, TelemetryItem telemetryItem) throws Exception {
+    private static void publish(OtlpHttpReceiverService service, TelemetryItem telemetryItem) throws Exception {
         Method publish = OtlpHttpReceiverService.class.getDeclaredMethod("publish", String.class, TelemetryItem.class);
         publish.setAccessible(true);
-        publish.invoke(service, scopeKey, telemetryItem);
+        publish.invoke(service, "project-one", telemetryItem);
     }
 
     private static String resolveSignalType(String path) throws Exception {
@@ -230,8 +251,8 @@ public class OtlpHttpReceiverServiceTests {
         return new RuntimeException(cause);
     }
 
-    private static TelemetryItem telemetry(String id) {
-        return new TelemetryItem(id, id, new Telemetry(null, null, null, null));
+    private static TelemetryItem telemetry() {
+        return new TelemetryItem("project-one", "project-one", new Telemetry(null, null, null, null));
     }
 
     private static byte[] createLogsPayload() {
@@ -322,6 +343,7 @@ public class OtlpHttpReceiverServiceTests {
                 .build();
     }
 
+    /** An in-memory exchange that records the response, so the handler can be driven without a server. */
     private static final class FakeHttpExchange extends HttpExchange {
         private final Headers requestHeaders = new Headers();
         private final Headers responseHeaders = new Headers();

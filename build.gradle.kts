@@ -1,7 +1,10 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.BuildSearchableOptionsTask
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
+import java.net.URI
 
 // Get the plugin properties from the gradle.properties file
 group = providers.gradleProperty("pluginGroup").get()
@@ -30,8 +33,80 @@ plugins {
     alias(libs.plugins.testLogger) // Gradle Test Logger Plugin
 }
 
-// Import the oltp-proto tasks
-apply(from = "gradle/otlp-proto.gradle")
+/**
+ * Downloads the OpenTelemetry proto files for the specified version and adds them to the protobuf source set for the project.
+ * This means our proto files stay in sync with the version of OpenTelemetry we depend on, and we don't have to manually manage the proto files in our repository.
+ */
+abstract class DownloadOtlpProtoTask : DefaultTask() {
+    @get:Input
+    abstract val schemaVersion: Property<String>
+
+    @get:Input
+    abstract val protoFiles: ListProperty<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun download() {
+        val targetRoot = outputDir.get().asFile
+        val baseUrl = "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/v${schemaVersion.get()}"
+
+        targetRoot.deleteRecursively()
+        targetRoot.mkdirs()
+
+        protoFiles.get().forEach { relativePath ->
+            val targetFile = targetRoot.resolve(relativePath)
+            targetFile.parentFile.mkdirs()
+            URI("$baseUrl/$relativePath").toURL().openStream().use { input ->
+                targetFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+    }
+}
+
+val downloadedOtlpProtoDir = layout.buildDirectory.dir("downloaded-protos/main")
+
+val downloadOtlpProto = tasks.register<DownloadOtlpProtoTask>("downloadOtlpProto") {
+    schemaVersion = libs.versions.opentelemetryProto.get().substringBefore('-')
+    protoFiles = listOf(
+        "opentelemetry/proto/common/v1/common.proto",
+        "opentelemetry/proto/resource/v1/resource.proto",
+        "opentelemetry/proto/trace/v1/trace.proto",
+        "opentelemetry/proto/logs/v1/logs.proto",
+        "opentelemetry/proto/metrics/v1/metrics.proto",
+        "opentelemetry/proto/collector/trace/v1/trace_service.proto",
+        "opentelemetry/proto/collector/logs/v1/logs_service.proto",
+        "opentelemetry/proto/collector/metrics/v1/metrics_service.proto",
+    )
+    outputDir = downloadedOtlpProtoDir
+}
+
+// Add the downloaded proto files to the main source set for protobuf
+sourceSets {
+    main {
+        proto {
+            srcDir(downloadedOtlpProtoDir)
+        }
+    }
+}
+
+tasks.named("processProtoResources") {
+    dependsOn(downloadOtlpProto)
+}
+
+// Configure the protobuf plugin to use the downloaded proto files and the correct protoc artifact
+protobuf {
+    protoc {
+        artifact = libs.protobufProtoc.get().toString()
+    }
+
+    generateProtoTasks {
+        all().configureEach {
+            dependsOn(downloadOtlpProto)
+        }
+    }
+}
 
 // Set the JVM language level used to build the project.
 kotlin {
@@ -52,7 +127,6 @@ repositories {
 dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
-    implementation(libs.apacheCommonsText)
     implementation(libs.jacksonDatabind)
     implementation(libs.jacksonDatatypeJsr310)
     implementation(libs.protobufJava)
@@ -164,6 +238,15 @@ kover {
     }
 }
 
+// Grazie's cloud licence coroutines keep running when the headless IDE used to index searchable
+// options shuts down. The platform kills the process after its 10s grace period, so the task reports a
+// non-zero exit even though it wrote the index. Grazie contributes nothing to this plugin's options.
+tasks.withType<BuildSearchableOptionsTask>().configureEach {
+    jvmArgumentProviders += CommandLineArgumentProvider {
+        listOf("-Didea.suppressed.plugins.id=tanvd.grazi")
+    }
+}
+
 tasks {
     wrapper {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
@@ -176,6 +259,13 @@ tasks {
 
 intellijPlatformTesting {
     runIde {
+        // Sandbox against the next IDE release, so the plugin can be tried out there before it ships.
+        register("runIdeNext") {
+            type = IntelliJPlatformType.Rider
+            version = providers.gradleProperty("nextPlatformVersion")
+            useInstaller = useInstallerForPlatform
+        }
+
         register("runIdeForUiTests") {
             task {
                 jvmArgumentProviders += CommandLineArgumentProvider {

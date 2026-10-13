@@ -1,15 +1,22 @@
 # Dependabot configuration:
-# https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/configuration-options-for-dependency-updates
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 
 version: 2
+
+# Combine all updates across ecosystems into a single pull request
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: "daily"
+
 updates:
   # Maintain dependencies for Gradle dependencies
   - package-ecosystem: "gradle"
     directory: "/"
-    schedule:
-      interval: "daily"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
-    schedule:
-      interval: "daily"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"

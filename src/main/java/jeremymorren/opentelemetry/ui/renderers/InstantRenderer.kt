@@ -6,6 +6,7 @@ import java.time.Instant
 import java.util.*
 import javax.swing.JTable
 
+/** Renders the timestamp column as local time of day (`HH:mm:ss.SSS`). */
 class InstantRenderer : TelemetryRendererBase() {
     private val simpleDateFormat = SimpleDateFormat("HH:mm:ss.SSS")
 
