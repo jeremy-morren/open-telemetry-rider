@@ -11,16 +11,18 @@ import com.jetbrains.rider.run.WorkerRunInfo
 import com.jetbrains.rider.runtime.DotNetExecutable
 import com.jetbrains.rider.runtime.DotNetRuntime
 import jeremymorren.opentelemetry.settings.AppSettingState
-import org.jetbrains.concurrency.Promise
-import org.jetbrains.concurrency.resolvedPromise
 
 /**
  * Rider extension that patches .NET run/debug command lines to inject OTLP environment variables.
  *
- * Only the latest, non-deprecated overloads of [PatchCommandLineExtension] are overridden.
+ * Only the suspending overloads of [PatchCommandLineExtension] (Rider 2026.2+) are overridden; the
+ * Promise/ProcessListener overloads are deprecated and would fail plugin verification.
+ * [JvmDefaultWithoutCompatibility] stops the compiler emitting bridges for the deprecated overloads,
+ * which the plugin verifier would otherwise report as deprecated API usages.
  */
+@JvmDefaultWithoutCompatibility
 class OtlpRiderPatchCommandLineExtension : PatchCommandLineExtension {
-    override fun patchRunCommandLine(
+    override suspend fun patchRunCommandLineSuspending(
         commandLine: GeneralCommandLine,
         dotNetRuntime: DotNetRuntime,
         dotNetExecutable: DotNetExecutable?,
@@ -30,16 +32,16 @@ class OtlpRiderPatchCommandLineExtension : PatchCommandLineExtension {
         return null
     }
 
-    override fun patchDebugCommandLine(
+    override suspend fun patchDebugCommandLineSuspending(
         lifetime: Lifetime,
         workerRunInfo: WorkerRunInfo,
         processInfo: ProcessInfo?,
         dotNetExecutable: DotNetExecutable?,
         project: Project,
         dataContext: DataContext?,
-    ): Promise<WorkerRunInfo> {
+    ): WorkerRunInfo {
         patchEnvironment(workerRunInfo.commandLine, project)
-        return resolvedPromise(workerRunInfo)
+        return workerRunInfo
     }
 
     private fun patchEnvironment(commandLine: GeneralCommandLine, project: Project) {

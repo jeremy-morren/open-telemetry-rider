@@ -1,10 +1,10 @@
 package jeremymorren.opentelemetry.ui.components;
 
 import com.intellij.icons.AllIcons;
-import com.intellij.idea.ActionsBundle;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ToggleAction;
+import jeremymorren.opentelemetry.OpenTelemetryBundle;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.function.Consumer;
@@ -19,7 +19,7 @@ public class AutoScrollToTheEndToolbarAction extends ToggleAction {
         this.onSelect = onSelect;
         this.state = selected;
 
-        String message = ActionsBundle.message("action.EditorConsoleScrollToTheEnd.text");
+        String message = OpenTelemetryBundle.message("ScrollToTheEnd.text");
         this.getTemplatePresentation().setDescription(message);
         this.getTemplatePresentation().setText(message);
         this.getTemplatePresentation().setIcon(AllIcons.RunConfigurations.Scroll_down);
