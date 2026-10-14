@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-10-14
+
 - Upgraded to Rider `2026.2` (build version `262.*`). Rider `2026.1` and earlier are no longer supported.
 - Telemetry is now scoped to the debug session that produced it, so debugging several projects at once
   no longer mixes their telemetry into every tab.
@@ -66,8 +68,9 @@
 - Initial release of the Open Telemetry debug logs viewer for Rider plugin.
 - Support metrics, activities and logs viewing.
 
-[Unreleased]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.5...HEAD
-[1.0.5]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.4...1.0.5
-[1.0.4]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.2...1.0.4
-[1.0.2]: https://github.com/jeremy-morren/open-telemetry-rider/compare/1.0.1...1.0.2
-[1.0.1]: https://github.com/jeremy-morren/open-telemetry-rider/commits/1.0.1
+[Unreleased]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.5...v1.0.6
+[1.0.5]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.2...v1.0.4
+[1.0.2]: https://github.com/jeremy-morren/open-telemetry-rider/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/jeremy-morren/open-telemetry-rider/commits/v1.0.1
