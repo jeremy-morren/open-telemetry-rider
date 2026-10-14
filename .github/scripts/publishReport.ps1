@@ -55,7 +55,7 @@ if (-not (Test-Path -Path $ReportRoot -PathType Container)) {
 }
 
 # Each Rider build gets its own RD-* directory. Under plugins/, the raw reports live at plugins/<plugin-id>/<version>/.
-$reportDirectories = Get-ChildItem -Path $ReportRoot -Directory | Sort-Object Name
+$reportDirectories = @(Get-ChildItem -Path $ReportRoot -Directory | Sort-Object Name)
 if ($reportDirectories.Count -eq 0) {
     throw "No plugin verifier reports found in $ReportRoot"
 }

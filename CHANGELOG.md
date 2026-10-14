@@ -4,6 +4,7 @@
 
 ## [Unreleased]
 
+- Upgraded to Rider `2026.2` (build version `262.*`). Rider `2026.1` and earlier are no longer supported.
 - Telemetry is now scoped to the debug session that produced it, so debugging several projects at once
   no longer mixes their telemetry into every tab.
 - Clearing the log is now permanent: telemetry is no longer replayed into the next debug session.
