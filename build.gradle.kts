@@ -65,6 +65,40 @@ abstract class DownloadOtlpProtoTask : DefaultTask() {
     }
 }
 
+/**
+ * Looks up the latest opentelemetry-proto release on GitHub and writes it to the `opentelemetryProto` entry in the version catalog.
+ * Dependabot cannot track that entry because it is only used to build a download URL, so run this manually: `./gradlew updateOtlpProtoVersion`.
+ */
+@UntrackedTask(because = "Rewrites a source file from a remote lookup")
+abstract class UpdateOtlpProtoVersionTask : DefaultTask() {
+    @get:Internal
+    abstract val versionCatalog: RegularFileProperty
+
+    @TaskAction
+    fun update() {
+        val connection = URI("https://api.github.com/repos/open-telemetry/opentelemetry-proto/releases/latest").toURL().openConnection()
+        connection.setRequestProperty("Accept", "application/vnd.github+json")
+        System.getenv("GITHUB_TOKEN")?.takeIf { it.isNotBlank() }?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+        val response = connection.getInputStream().use { it.readBytes().decodeToString() }
+        val latest = Regex("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"").find(response)?.groupValues?.get(1)
+            ?: throw GradleException("Could not find tag_name in the GitHub latest release response")
+
+        val catalogFile = versionCatalog.get().asFile
+        val entry = Regex("""(?m)^(opentelemetryProto\s*=\s*")([^"]*)(")""")
+        val catalog = catalogFile.readText()
+        val current = entry.find(catalog)?.groupValues?.get(2)
+            ?: throw GradleException("No opentelemetryProto entry found in ${catalogFile.name}")
+
+        if (current == latest) {
+            logger.lifecycle("opentelemetryProto is already the latest version ($current)")
+            return
+        }
+
+        catalogFile.writeText(entry.replace(catalog) { "${it.groupValues[1]}$latest${it.groupValues[3]}" })
+        logger.lifecycle("Updated opentelemetryProto from $current to $latest")
+    }
+}
+
 val downloadedOtlpProtoDir = layout.buildDirectory.dir("downloaded-protos/main")
 
 val downloadOtlpProto = tasks.register<DownloadOtlpProtoTask>("downloadOtlpProto") {
@@ -80,6 +114,12 @@ val downloadOtlpProto = tasks.register<DownloadOtlpProtoTask>("downloadOtlpProto
         "opentelemetry/proto/collector/metrics/v1/metrics_service.proto",
     )
     outputDir = downloadedOtlpProtoDir
+}
+
+tasks.register<UpdateOtlpProtoVersionTask>("updateOtlpProtoVersion") {
+    group = "build setup"
+    description = "Updates the opentelemetryProto version in the version catalog to the latest opentelemetry-proto release."
+    versionCatalog = layout.projectDirectory.file("gradle/libs.versions.toml")
 }
 
 // Add the downloaded proto files to the main source set for protobuf
